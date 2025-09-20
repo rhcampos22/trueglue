@@ -3,6 +3,7 @@ import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
 import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
 import { createPortal } from "react-dom";
+import { useT, cardStyle, focusRing, PrimaryButton, Pill } from "./ui";
 
 function ThemeTogglePortal() {
   const { theme, toggle, colors } = useTheme();
@@ -182,7 +183,6 @@ const h1Style: React.CSSProperties = {
 const taglineStyle: React.CSSProperties = {
   margin: 0,
   marginTop: -2,
-  color: TG_COLORS.textDim,
   fontSize: 13,
 };
 
@@ -197,15 +197,18 @@ const pillStyle: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 999,
   border: `1px solid ${TG_COLORS.border}`,
-  background: TG_COLORS.surface,
+  background: "transparent",
+  color: "inherit",
   cursor: "pointer",
   fontSize: 13,
 };
 
 const activePillStyle: React.CSSProperties = {
   ...pillStyle,
+  background: TG_COLORS.primary,
   borderColor: TG_COLORS.primary,
-  boxShadow: `0 0 0 2px rgba(138,21,56,0.1)`,
+  color: "#001315",
+  boxShadow: "0 0 0 2px rgba(47,165,165,0.20)",
 };
 
 function PillButton({
@@ -219,27 +222,25 @@ function PillButton({
   kind?: "outline" | "solid";
   disabled?: boolean;
 }) {
-  const base = {
-    ...pillStyle,
-    borderColor: TG_COLORS.border,
+  const T = useT();
+  const base: React.CSSProperties = {
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.6 : 1,
-  } as React.CSSProperties;
-
-  const solid = {
-    ...pillStyle,
-    background: TG_COLORS.primary,
-    color: "#fff",
-    borderColor: TG_COLORS.primary,
-  } as React.CSSProperties;
-
+    fontSize: 13,
+  };
+  const solid: React.CSSProperties = {
+    ...base,
+    background: T.primary,
+    borderColor: T.primary,
+    color: "#001315",
+  };
   return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      style={kind === "solid" ? solid : base}
-      disabled={disabled}
-    >
+    <button type="button" onClick={disabled ? undefined : onClick} style={kind === "solid" ? solid : base} disabled={disabled}>
       {children}
     </button>
   );
@@ -709,14 +710,14 @@ function AppShell() {
     return (h as TGRoute) || "home";
   })();
 
-  const { colors } = useTheme();
+  const T = useT();
 
-  const appStyle: React.CSSProperties = {
-    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    background: colors.bg,
-    color: colors.text,
-    minHeight: "100vh",
-  };
+const appStyle: React.CSSProperties = {
+  fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+  background: T.bg,
+  color: T.text,
+  minHeight: "100vh",
+};
 
   const [user, setUser] = useState<UserState>(() => loadState());
   const [route, setRoute] = useState<TGRoute>(initialRoute);
@@ -771,15 +772,16 @@ function AppShell() {
                 height: 50,
                 borderRadius: "50%",
                 objectFit: "cover",
-                border: `2px solid ${colors.accent}`,
-                boxShadow: "0 0 0 2px rgba(212,175,55,0.2)",
+                border: `2px solid ${T.accent}`,
+                boxShadow: "0 0 0 2px rgba(47,165,165,0.20)",
+
               }}
             />
             <div>
               <h1 style={h1Style}>TrueGlue</h1>
-              <p style={{ ...taglineStyle, color: colors.textDim }}>
-                Gospel-centered tools for everyday marriage.
-              </p>
+              <p style={{ ...taglineStyle, color: T.muted }}>
+  Gospel-centered tools for everyday marriage.
+</p>
             </div>
           </header>
 
@@ -801,6 +803,26 @@ type AppTabsProps = {
 };
 
 function AppTabs({ route, setRoute }: AppTabsProps) {
+  const T = useT();
+
+  const pillStyleThemed: React.CSSProperties = {
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
+    cursor: "pointer",
+    fontSize: 13,
+  };
+
+  const activePillStyleThemed: React.CSSProperties = {
+    ...pillStyleThemed,
+    background: T.primary,
+    borderColor: T.primary,
+    color: "#001315",
+    boxShadow: "0 0 0 2px rgba(47,165,165,0.20)", // teal glow
+  };
+
   const tabItems = React.useMemo<ReadonlyArray<TabItem<TGRoute>>>(() => {
     const base: ReadonlyArray<TabItem<TGRoute>> = [
       { id: "home",         label: "Home",              panel: <Home /> },
@@ -832,8 +854,8 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
       value={route}
       onChange={onChange}
       items={tabItems}
-      pillStyle={pillStyle}
-      activePillStyle={activePillStyle}
+      pillStyle={pillStyleThemed}
+      activePillStyle={activePillStyleThemed}
     />
   );
 }
@@ -846,6 +868,7 @@ function CoachTips({
   primary?: ConflictStyle;
   secondary?: ConflictStyle;
 }) {
+const T = useT();
   const tips = [
     ...(primary ? STYLE_TIPS[primary] : []),
     ...(secondary && secondary !== primary ? STYLE_TIPS[secondary] : []),
@@ -853,7 +876,7 @@ function CoachTips({
 
   if (!tips.length) {
     return (
-      <div style={{ color: TG_COLORS.textDim, fontSize: 13 }}>
+      <div style={{ color: T.muted, fontSize: 13 }}>
         Take the assessment to unlock personalized tips.
       </div>
     );
@@ -870,28 +893,31 @@ function CoachTips({
 
 /* -------------------- HOME -------------------- */
 function Card(p: React.PropsWithChildren<{ title: string; sub?: string }>) {
+  const T = useT();
   return (
     <section
       style={{
-        background: TG_COLORS.surface,
-        border: `1px solid ${TG_COLORS.border}`,
+        background: T.card,
+        border: `1px solid ${T.soft}`,
         borderRadius: 12,
         padding: 16,
         marginBottom: 16,
-        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+        boxShadow: T.shadow,
+        color: T.text,
       }}
     >
-      <h3 style={{ margin: 0, fontSize: 16 }}>{p.title}</h3>
-      {p.sub && <p style={{ marginTop: 4, color: TG_COLORS.textDim }}>{p.sub}</p>}
+      <h3 style={{ margin: 0, fontSize: 16, color: T.text }}>{p.title}</h3>
+      {p.sub && <p style={{ marginTop: 4, color: T.muted }}>{p.sub}</p>}
       <div style={{ marginTop: 10 }}>{p.children}</div>
     </section>
   );
 }
 
 function Home() {
+  const T = useT();
   const { user, setVerseTopic } = useApp();
   const day = new Date();
-  const dayIndex = localDaySeed(); // local-seeded & DST-proof
+  const dayIndex = localDaySeed();
 
   // Verse of the Day (deterministic by day & topic)
   const verses = SeedVersesByTopic[user.selectedVerseTopic] || [];
@@ -903,17 +929,22 @@ function Home() {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {TOPICS.map((t) => (
             <button
-              key={t}
-              type="button"
-              onClick={() => setVerseTopic(t)}
-              style={{
-                ...pillStyle,
-                borderColor: t === user.selectedVerseTopic ? TG_COLORS.primary : TG_COLORS.border,
-              }}
-              aria-pressed={t === user.selectedVerseTopic}
-            >
-              {t}
-            </button>
+  key={t}
+  type="button"
+  onClick={() => setVerseTopic(t)}
+  style={{
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${t === user.selectedVerseTopic ? T.primary : T.soft}`,
+    background: "transparent",
+    color: T.text,
+    cursor: "pointer",
+    fontSize: 13,
+  }}
+  aria-pressed={t === user.selectedVerseTopic}
+>
+  {t}
+</button>
           ))}
         </div>
 
@@ -921,7 +952,7 @@ function Home() {
           {v ? (
             <>
               <blockquote style={{ margin: 0, fontSize: 15 }}>{v.text}</blockquote>
-              <div style={{ marginTop: 6, color: TG_COLORS.textDim }}>{v.ref}</div>
+              <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
             </>
           ) : (
             <em>Add verses to this topic to enable VOTD.</em>
@@ -942,6 +973,7 @@ function Home() {
 
 /* -------------------- MICRO-HABITS -------------------- */
 function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: string }) {
+  const T = useT();
   const { user, completeHabit } = useApp();
   const done = (user.completedHabits[id] ?? []).includes(todayISO());
   return (
@@ -952,10 +984,11 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
         gap: 12,
         alignItems: "center",
         padding: "10px 12px",
-        border: `1px solid ${TG_COLORS.border}`,
+        border: `1px solid ${T.soft}`,
         borderRadius: 10,
-        background: TG_COLORS.surface,
+        background: T.card,
         marginBottom: 8,
+        color: T.text,
       }}
     >
       <div
@@ -964,22 +997,26 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
           width: 10,
           height: 10,
           borderRadius: 6,
-          background: done ? TG_COLORS.success : TG_COLORS.border,
+          background: done ? T.success : T.soft,
         }}
       />
       <div>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div style={{ fontSize: 13, color: TG_COLORS.textDim }}>{tip}</div>
+        <div style={{ fontWeight: 600, color: T.text }}>{title}</div>
+        <div style={{ fontSize: 13, color: T.muted }}>{tip}</div>
       </div>
       <button
         type="button"
         onClick={() => completeHabit(id)}
         disabled={done}
         style={{
-          ...pillStyle,
-          background: done ? "#F2F6F2" : TG_COLORS.surface,
-          borderColor: done ? TG_COLORS.success : TG_COLORS.border,
+          padding: "8px 12px",
+          borderRadius: 999,
+          border: `1px solid ${done ? T.success : T.soft}`,
+          background: "transparent",
+          color: T.text,
           cursor: done ? "default" : "pointer",
+          opacity: done ? 0.7 : 1,
+          fontSize: 13,
         }}
         aria-label={done ? `${title} completed` : `Mark ${title} done`}
       >
@@ -990,6 +1027,7 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
 }
 
 function MicroHabits() {
+  const T = useT();
   const dayIndex = localDaySeed();
   const loveMap = LoveMapQuestions[randIndex(LoveMapQuestions, dayIndex)];
   const prayer = PrayerNudges[randIndex(PrayerNudges, dayIndex)];
@@ -1021,13 +1059,9 @@ function MicroHabits() {
           Inhale 4 • Hold 4 • Exhale 6 — repeat gently. You can proceed at any time.
         </div>
         <div style={{ marginBottom: 10 }}>
-          <button
-            type="button"
-            onClick={() => setOpenCalm(true)}
-            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-          >
-            Open Calm Timer
-          </button>
+         <PrimaryButton T={T} onClick={() => setOpenCalm(true)}>
+  Open Calm Timer
+</PrimaryButton> 
         </div>
         <HabitRow
           id="calmBreath"
@@ -1055,7 +1089,9 @@ function MicroHabits() {
 }
 
 /* -------------------- LESSONS -------------------- */
+
 function Lessons() {
+const T = useT();
   return (
     <>
       {LessonsIndex.map((lsn) => (
@@ -1071,7 +1107,7 @@ function Lessons() {
               </li>
             ))}
           </ul>
-          <div style={{ marginTop: 8, fontSize: 13, color: TG_COLORS.textDim }}>
+          <div style={{ marginTop: 8, fontSize: 13, color: T.muted }}>
             Commentaries / authors to consult: {lsn.commentaryRefs.join("; ")}
           </div>
         </Card>
@@ -1091,6 +1127,7 @@ function Assessment({
   onClose: () => void;
   onFinish: (primary: ConflictStyle, secondary: ConflictStyle) => void;
 }) {
+  const T = useT();
   const [answers, setAnswers] = useState<Record<string, ConflictStyle>>({});
   const [i, setI] = useState(0);
   const q = ASSESSMENT[i];
@@ -1119,22 +1156,29 @@ function Assessment({
       role="dialog"
       aria-modal="true"
       style={{
-        border: `1px solid ${TG_COLORS.border}`,
+        border: `1px solid ${T.soft}`,
         borderRadius: 12,
         padding: 16,
-        background: TG_COLORS.surface,
-        color: TG_COLORS.text,
+        background: T.card,
+        color: T.text,
         marginTop: 12,
+        boxShadow: T.shadow,
       }}
     >
-      <div
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <h3 style={{ margin: 0 }}>Conflict Style Assessment</h3>
         <button
           type="button"
           onClick={onClose}
-          style={{ ...pillStyle, background: "transparent", borderColor: TG_COLORS.border }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: `1px solid ${T.soft}`,
+            background: "transparent",
+            color: T.text,
+            cursor: "pointer",
+            fontSize: 13,
+          }}
         >
           Close
         </button>
@@ -1154,10 +1198,11 @@ function Assessment({
                 onClick={() => choose(o.style)}
                 style={{
                   textAlign: "left",
-                  border: `1px solid ${TG_COLORS.border}`,
+                  border: `1px solid ${T.soft}`,
                   borderRadius: 10,
                   padding: "12px 14px",
-                  background: TG_COLORS.surface,
+                  background: "transparent",
+                  color: T.text,
                   cursor: "pointer",
                   fontWeight: 600,
                 }}
@@ -1166,7 +1211,7 @@ function Assessment({
               </button>
             ))}
           </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: TG_COLORS.textDim }}>
+          <div style={{ marginTop: 12, fontSize: 12, color: T.muted }}>
             Your answers determine your primary and secondary styles.
           </div>
         </>
@@ -1177,8 +1222,8 @@ function Assessment({
             type="button"
             onClick={compute}
             style={{
-              background: TG_COLORS.accent,
-              color: "#000",
+              background: T.accent,
+              color: "#1b1500",
               border: "none",
               borderRadius: 10,
               padding: "12px 16px",
@@ -1196,6 +1241,7 @@ function Assessment({
 
 /* -------------------- PROFILE -------------------- */
 function Profile() {
+  const T = useT();
   const { user, setUser } = useApp();
 
   // Initialize form from saved profile or defaults
@@ -1226,13 +1272,14 @@ function Profile() {
   }
 
   const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: `1px solid ${TG_COLORS.border}`,
-    background: TG_COLORS.surface,
-    fontSize: 14,
-  };
+  width: "100%",
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: `1px solid ${T.soft}`,
+  background: "transparent",
+  color: T.text,
+  fontSize: 14,
+};
 
   const rowStyle: React.CSSProperties = {
     display: "grid",
@@ -1246,7 +1293,7 @@ function Profile() {
         <div style={{ display: "grid", gap: 12 }}>
           <div style={rowStyle}>
             <label>
-              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Display name</div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Display name</div>
               <input
                 type="text"
                 value={form.displayName}
@@ -1256,7 +1303,7 @@ function Profile() {
               />
             </label>
             <label>
-              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Email</div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Email</div>
               <input
                 type="email"
                 value={form.email}
@@ -1269,7 +1316,7 @@ function Profile() {
 
           <div style={rowStyle}>
             <label>
-              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Spouse name</div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Spouse name</div>
               <input
                 type="text"
                 value={form.spouseName}
@@ -1279,7 +1326,7 @@ function Profile() {
               />
             </label>
             <label>
-              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Anniversary</div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Anniversary</div>
               <input
                 type="date"
                 value={form.anniversary}
@@ -1290,7 +1337,7 @@ function Profile() {
           </div>
 
           <label>
-            <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Church</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Church</div>
             <input
               type="text"
               value={form.church}
@@ -1301,13 +1348,37 @@ function Profile() {
           </label>
 
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <button type="button" onClick={save} style={{ ...pillStyle, borderColor: TG_COLORS.primary }}>
-              Save
-            </button>
-            <button type="button" onClick={clearProfile} style={pillStyle}>
-              Clear
-            </button>
-            {saved && <div style={{ alignSelf: "center", color: TG_COLORS.textDim, fontSize: 13 }}>Saved ✅</div>}
+            <button
+  type="button"
+  onClick={save}
+  style={{
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${T.primary}`,
+    background: "transparent",
+    color: T.text,
+    cursor: "pointer",
+    fontSize: 13,
+  }}
+>
+  Save
+</button>
+<button
+  type="button"
+  onClick={clearProfile}
+  style={{
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
+    cursor: "pointer",
+    fontSize: 13,
+  }}
+>
+  Clear
+</button>
+            {saved && <div style={{ alignSelf: "center", color: T.muted, fontSize: 13 }}>Saved ✅</div>}
           </div>
         </div>
       </Card>
@@ -1327,34 +1398,30 @@ function Profile() {
 function Assessments() {
   const { user, setUser } = useApp();
   const [show, setShow] = useState(false);
-
+  const T = useT();
   return (
     <>
-      <Card title="Your Conflict Style">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
-            Primary: {user.stylePrimary ?? "—"}
-          </span>
-          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
-            Secondary: {user.styleSecondary ?? "—"}
-          </span>
+            <section style={{ ...cardStyle(T), marginBottom: 16 }}>
+        <h3 style={{ margin: 0 }}>Your Conflict Style</h3>
+
+        {/* Summary pills */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <Pill T={T}>Primary: {user.stylePrimary ?? "—"}</Pill>
+          <Pill T={T}>Secondary: {user.styleSecondary ?? "—"}</Pill>
         </div>
 
-        <div style={{ marginTop: 10 }}>
-          <button
-            type="button"
-            onClick={() => setShow(true)}
-            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-          >
+        {/* CTA */}
+        <div style={{ marginTop: 12 }}>
+          <PrimaryButton T={T} onClick={() => setShow(true)}>
             {user.stylePrimary ? "Retake Assessment" : "Take Assessment"}
-          </button>
+          </PrimaryButton>
         </div>
 
-        {/* Personalized tips inline */}
+        {/* Personalized tips inline (kept as-is, just themed spacing) */}
         <div style={{ marginTop: 14 }}>
           <CoachTips primary={user.stylePrimary} secondary={user.styleSecondary} />
         </div>
-      </Card>
+      </section>
 
       {show && (
         <Assessment
@@ -1379,10 +1446,11 @@ function CalmBreathModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onProceed: () => void;           // proceed anytime
+  onProceed: () => void;
   seconds?: number;
   scripture?: string;
 }) {
+  const T = useT();
   const [sec, setSec] = React.useState(seconds);
   const [running, setRunning] = React.useState(true);
   const intervalRef = React.useRef<number | null>(null);
@@ -1440,31 +1508,37 @@ function CalmBreathModal({
 
       <div
         style={{
-          maxWidth: 640,
-          width: "100%",
-          background: TG_COLORS.surface,
-          border: `1px solid ${TG_COLORS.border}`,
-          borderRadius: 14,
-          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-          color: TG_COLORS.text,
-          padding: 16,
-        }}
+  maxWidth: 640,
+  width: "100%",
+  background: T.card,
+  border: `1px solid ${T.soft}`,
+  borderRadius: 14,
+  boxShadow: T.shadow,
+  color: T.text,
+  padding: 16,
+}}
       >
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ margin: 0 }}></h3>
           <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              ...pillStyle,
-              background: "transparent",
-              borderColor: TG_COLORS.border,
-            }}
-          >
-            ✕
-          </button>
+  type="button"
+  onClick={onClose}
+  aria-label="Close"
+  style={{
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
+    borderRadius: 10,
+    padding: "8px 12px",
+    cursor: "pointer",
+    outline: "none",
+  }}
+  onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+  onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+>
+  ✕
+</button>
         </div>
 
         {/* Ring */}
@@ -1475,7 +1549,7 @@ function CalmBreathModal({
               width: 220,
               height: 220,
               borderRadius: "50%",
-              border: `4px solid ${TG_COLORS.primary}`,
+              border: `4px solid ${T.primary}`,
               display: "grid",
               placeItems: "center",
               animation: "tg-breathe 6s ease-in-out infinite",
@@ -1493,7 +1567,7 @@ function CalmBreathModal({
             <button
               type="button"
               onClick={onProceed}
-              style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
+              style={{ ...pillStyle, borderColor: T.primary }}
             >
               Proceed
             </button>
@@ -1518,7 +1592,7 @@ function CalmBreathModal({
         </div>
 
         {/* Scripture line */}
-        <p style={{ color: TG_COLORS.textDim, textAlign: "center", marginTop: 14, marginBottom: 6 }}>
+        <p style={{ color: T.muted, textAlign: "center", marginTop: 14, marginBottom: 6 }}>
           {scripture}
         </p>
       </div>
@@ -1529,7 +1603,7 @@ function CalmBreathModal({
 /* -------------------- CALM TOOLS (breathing modal) -------------------- */
 function CalmTools() {
   const [open, setOpen] = React.useState(true); // auto-open when visiting the Calm tab
-
+  const T = useT();
   return (
     <>
       {/* A simple card that lets users reopen the modal */}
@@ -1538,13 +1612,9 @@ function CalmTools() {
           Use this before a tough conversation. You can proceed at any time—you don’t have to wait the full 60 seconds.
         </div>
         <div style={{ marginTop: 10 }}>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-          >
-            Open Calm Timer
-          </button>
+          <PrimaryButton T={T} onClick={() => setOpen(true)}>
+  Open Calm Timer
+</PrimaryButton>
         </div>
       </Card>
 
@@ -1562,6 +1632,7 @@ function CalmTools() {
 
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
+const T = useT();
   if (!FEATURES.churchMode) {
     return (
       <Card title="Church features">
@@ -1593,8 +1664,9 @@ function ChurchPanel() {
 
 /* -------------------- FOOTER -------------------- */
 function Footer() {
+  const T = useT();
   return (
-    <div style={{ marginTop: 24, padding: "24px 0", color: TG_COLORS.textDim, fontSize: 12 }}>
+    <div style={{ marginTop: 24, padding: "24px 0", color: T.muted, fontSize: 12 }}>
       <div>© {new Date().getFullYear()} TrueGlue. For marriage health and unity.</div>
     </div>
   );

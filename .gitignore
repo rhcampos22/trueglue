@@ -1,6 +1,7 @@
-node_modules/
+﻿node_modules/
 dist/
-.vite/
+.vscode/
 .env
-.DS_Store
+.env.local
+coverage/
 *.log
