@@ -250,6 +250,7 @@ export type TGRoute =
   | "home"
   | "microhabits"
   | "lessons"
+  | "profile"
   | "workflow"
   | "assessments"
   | "calm"
@@ -272,6 +273,14 @@ export type MicroHabitId =
   | "scriptureVOTD"
   | "prayer"
   | "calmBreath";
+
+type UserProfile = {
+  displayName?: string;
+  email?: string;
+  spouseName?: string;
+  anniversary?: string; // YYYY-MM-DD
+  church?: string;
+};
 
 /* -------------------- FEATURE FLAGS (beta-friendly, immutable) -------------------- */
 export const FEATURES = Object.freeze({
@@ -302,6 +311,9 @@ export type UserState = {
   // NEW — results of the conflict style assessment
   stylePrimary?: ConflictStyle;
   styleSecondary?: ConflictStyle;
+ 
+ // NEW
+  profile?: UserProfile;
 };
 
 function migrate(old: any): UserState | null {
@@ -796,6 +808,7 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
       { id: "lessons",      label: "Lessons",           panel: <Lessons /> },
       { id: "workflow",     label: "Conflict Workflow", panel: <ConflictWorkflow /> },
       { id: "assessments",  label: "Assessments",       panel: <Assessments /> },
+      { id: "profile",      label: "Profile",           panel: <Profile /> },
     ];
 
     if (FEATURES.churchMode) {
@@ -1178,6 +1191,135 @@ function Assessment({
         </div>
       )}
     </div>
+  );
+}
+
+/* -------------------- PROFILE -------------------- */
+function Profile() {
+  const { user, setUser } = useApp();
+
+  // Initialize form from saved profile or defaults
+  const [form, setForm] = React.useState<UserProfile>(() => ({
+    displayName: user.profile?.displayName ?? "",
+    email:       user.profile?.email ?? "",
+    spouseName:  user.profile?.spouseName ?? "",
+    anniversary: user.profile?.anniversary ?? "",
+    church:      user.profile?.church ?? "",
+  }));
+
+  const [saved, setSaved] = React.useState(false);
+
+  function update<K extends keyof UserProfile>(key: K, value: UserProfile[K]) {
+    setSaved(false);
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function save() {
+    setUser({ ...user, profile: { ...form } });
+    setSaved(true);
+  }
+
+  function clearProfile() {
+    setForm({ displayName: "", email: "", spouseName: "", anniversary: "", church: "" });
+    setUser({ ...user, profile: {} });
+    setSaved(false);
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1px solid ${TG_COLORS.border}`,
+    background: TG_COLORS.surface,
+    fontSize: 14,
+  };
+
+  const rowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  };
+
+  return (
+    <>
+      <Card title="Your Profile" sub="Used to personalize experiences and church features.">
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={rowStyle}>
+            <label>
+              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Display name</div>
+              <input
+                type="text"
+                value={form.displayName}
+                onChange={(e) => update("displayName", e.currentTarget.value)}
+                style={inputStyle}
+                placeholder="e.g., Ryan"
+              />
+            </label>
+            <label>
+              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Email</div>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => update("email", e.currentTarget.value)}
+                style={inputStyle}
+                placeholder="you@example.com"
+              />
+            </label>
+          </div>
+
+          <div style={rowStyle}>
+            <label>
+              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Spouse name</div>
+              <input
+                type="text"
+                value={form.spouseName}
+                onChange={(e) => update("spouseName", e.currentTarget.value)}
+                style={inputStyle}
+                placeholder="e.g., Taylor"
+              />
+            </label>
+            <label>
+              <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Anniversary</div>
+              <input
+                type="date"
+                value={form.anniversary}
+                onChange={(e) => update("anniversary", e.currentTarget.value)}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <label>
+            <div style={{ fontSize: 13, color: TG_COLORS.textDim, marginBottom: 4 }}>Church</div>
+            <input
+              type="text"
+              value={form.church}
+              onChange={(e) => update("church", e.currentTarget.value)}
+              style={inputStyle}
+              placeholder="e.g., Redemption Church"
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button type="button" onClick={save} style={{ ...pillStyle, borderColor: TG_COLORS.primary }}>
+              Save
+            </button>
+            <button type="button" onClick={clearProfile} style={pillStyle}>
+              Clear
+            </button>
+            {saved && <div style={{ alignSelf: "center", color: TG_COLORS.textDim, fontSize: 13 }}>Saved ✅</div>}
+          </div>
+        </div>
+      </Card>
+
+      <Card title="How Profile is Used">
+        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Personalized greetings and suggestions.</li>
+          <li>Future: leader/church features (group assignments, summaries).</li>
+          <li>All data stays on this device for now (localStorage).</li>
+        </ul>
+      </Card>
+    </>
   );
 }
 
