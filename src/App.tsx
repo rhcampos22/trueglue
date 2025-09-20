@@ -12,18 +12,18 @@ function ThemeTogglePortal() {
       aria-label="Toggle light/dark theme"
       onClick={toggle}
       style={{
-        position: "fixed",
-        top: 12,
-        right: 12,
-        zIndex: 2147483647,
-        padding: "8px 12px",
-        borderRadius: 999,
-        border: `1px solid ${colors.border}`,
-        background: colors.surface,
-        color: colors.text,
-        cursor: "pointer",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-      }}
+  position: "fixed",
+  top: 12,
+  right: 12,
+  zIndex: 2147483647,
+  padding: "8px 12px",
+  borderRadius: 999,
+  border: `1px solid ${colors.border}`,
+  background: colors.surface,
+  color: colors.text,
+  cursor: "pointer",
+  boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+}}
     >
       {theme === "dark" ? "☾ Dark" : "☀︎ Light"}
     </button>
@@ -122,7 +122,10 @@ function addMinutes(hhmm: string, mins: number) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 function escapeICS(s: string) {
-  return (s || "").replace(/[\n\r]/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  return (s || "")
+    .replace(/[\n\r]/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
 }
 function downloadICS({
   title, description, dateISO, timeHHMM,
@@ -140,8 +143,7 @@ DESCRIPTION:${escapeICS(description)}
 ${dateISO ? `DTSTART:${dtStart}` : ""}
 ${dateISO ? `DTEND:${dtEnd}` : ""}
 END:VEVENT
-END:VCALENDAR
-`;
+END:VCALENDAR`;
   const blob = new Blob([body], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -392,25 +394,25 @@ export function saveState(next: UserState) {
 /* -------------------- SEED CONTENT -------------------- */
 export const SeedVersesByTopic: Record<VerseTopic, { ref: string; text: string }[]> = {
   patience: [
-    { ref: "James 1:19", text: "Let every person be quick to hear, slow to speak, slow to anger..." },
-    { ref: "Proverbs 15:1", text: "A soft answer turns away wrath, but a harsh word stirs up anger." },
+    { ref: "James 1:19", text: "Wherefore, my beloved brethren, let every man be swift to hear, slow to speak, slow to wrath." },
+    { ref: "Proverbs 15:1", text: "A soft answer turneth away wrath: but grievous words stir up anger." },
   ],
   forgiveness: [
-    { ref: "Ephesians 4:32", text: "Be kind to one another... forgiving one another, as God in Christ forgave you." },
-    { ref: "Colossians 3:13", text: "As the Lord has forgiven you, so you also must forgive." },
+    { ref: "Ephesians 4:32", text: "And be ye kind one to another, tenderhearted, forgiving one another, even as God for Christ's sake hath forgiven you." },
+    { ref: "Colossians 3:13", text: "Forbearing one another, and forgiving one another, if any man have a quarrel against any: even as Christ forgave you, so also do ye." },
   ],
   unity: [
-    { ref: "Ephesians 4:3", text: "Eager to maintain the unity of the Spirit in the bond of peace." },
-    { ref: "Philippians 2:2", text: "Complete my joy by being of the same mind, same love, full accord." },
+    { ref: "Ephesians 4:3", text: "Endeavouring to keep the unity of the Spirit in the bond of peace." },
+    { ref: "Philippians 2:2", text: "Fulfil ye my joy, that ye be likeminded, having the same love, being of one accord, of one mind." },
   ],
   kindness: [
-    { ref: "Proverbs 3:3", text: "Do not let kindness and truth leave you..." },
+    { ref: "Proverbs 3:3", text: "Let not mercy and truth forsake thee: bind them about thy neck; write them upon the table of thine heart." },
   ],
   humility: [
-    { ref: "Philippians 2:3", text: "Do nothing from selfish ambition... but in humility count others more significant." },
+    { ref: "Philippians 2:3", text: "Let nothing be done through strife or vainglory; but in lowliness of mind let each esteem other better than themselves." },
   ],
   "self-control": [
-    { ref: "Galatians 5:22–23", text: "The fruit of the Spirit is love, joy, peace... self-control." },
+    { ref: "Galatians 5:22–23", text: "But the fruit of the Spirit is love, joy, peace, longsuffering, gentleness, goodness, faith, meekness, temperance: against such there is no law." },
   ],
 };
 
@@ -544,7 +546,6 @@ const ASSESSMENT: Q[] = [
 
 /* -------------------- UTILITIES (local-date correctness + DST-proof seed) -------------------- */
 export function todayISO() {
-  // Local calendar date (YYYY-MM-DD) — avoids UTC midnight issues
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -553,12 +554,11 @@ export function todayISO() {
 }
 
 function localDaySeed() {
-  // DST-proof: build a YYYYMMDD integer instead of dividing milliseconds
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return Number(`${y}${m}${day}`); // e.g., 20250918
+  return Number(`${y}${m}${day}`);
 }
 
 function dateAdd(isoYYYYMMDD: string, deltaDays: number) {
@@ -601,7 +601,11 @@ type AppCtx = {
   setUser(u: UserState): void;
   completeHabit(id: MicroHabitId): void;
   setVerseTopic(t: VerseTopic): void;
-  track(event: string, props?: Record<string, any>): void; // stubbed instrumentation
+  track(event: string, props?: Record<string, any>): void;
+
+  // NEW
+  setBlockNav(on: boolean): void;
+  isNavBlocked(): boolean;
 };
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -822,31 +826,46 @@ const appStyle: React.CSSProperties = {
   window.addEventListener("hashchange", applyHash);
   return () => window.removeEventListener("hashchange", applyHash);
 }, []);
+  const navBlockRef = React.useRef(false);
+useEffect(() => {
+  const h = (e: BeforeUnloadEvent) => {
+    if (navBlockRef.current) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  };
+  window.addEventListener("beforeunload", h);
+  return () => window.removeEventListener("beforeunload", h);
+}, []);
 
   const api = useMemo<AppCtx>(
-    () => ({
-      user,
-      setUser,
-      completeHabit: (id) => {
-        const d = todayISO();
-        const p = user.completedHabits[id] ?? [];
-        if (!p.includes(d)) {
-          const next = {
-            ...user,
-            completedHabits: {
-              ...user.completedHabits,
-              [id]: [...p, d],
-            },
-          };
-          setUser(next);
-toast("Marked done");
-        }
-      },
-      setVerseTopic: (t) => setUser({ ...user, selectedVerseTopic: t }),
-      track: (_event, _props) => {},
-    }),
-    [user]
-  );
+  () => ({
+    user,
+    setUser,
+    completeHabit: (id) => {
+      const d = todayISO();
+      const p = user.completedHabits[id] ?? [];
+      if (!p.includes(d)) {
+        const next = {
+          ...user,
+          completedHabits: {
+            ...user.completedHabits,
+            [id]: [...p, d],
+          },
+        };
+        setUser(next);
+        toast("Marked done");
+      }
+    },
+    setVerseTopic: (t) => setUser({ ...user, selectedVerseTopic: t }),
+    track: (_event, _props) => {},
+
+    // NEW
+    setBlockNav: (on) => { navBlockRef.current = on; },
+    isNavBlocked: () => navBlockRef.current,
+  }),
+  [user]
+);
 
   return (
     <>
@@ -971,7 +990,7 @@ function Home() {
   // Verse of the Day (deterministic by day & topic)
   const verses = SeedVersesByTopic[user.selectedVerseTopic] || [];
   const v = verses.length ? verses[randIndex(verses, dayIndex)] : null;
-
+  const [openVotd, setOpenVotd] = React.useState(false);
   return (
     <>
       <Card title="Verse of the Day" sub={`Topic: ${user.selectedVerseTopic}`}>
@@ -1000,25 +1019,36 @@ function Home() {
         <div style={{ marginTop: 12, lineHeight: 1.5 }}>
           {v ? (
             <>
+  
   <blockquote style={{ margin: 0, fontSize: 15 }}>{v.text}</blockquote>
   <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
-  <div style={{ marginTop: 8 }}>
-    <button
-      type="button"
-      onClick={() => { copy(`"${v.text}" — ${v.ref}`); toast("Verse copied"); }}
-      style={{
-        padding: "8px 12px",
-        borderRadius: 999,
-        border: `1px solid ${T.primary}`,
-        background: "transparent",
-        color: T.text,
-        cursor: "pointer",
-        fontSize: 13,
-      }}
-    >
-      Copy verse
-    </button>
-  </div>
+  <div style={{ marginTop: 10 }}>
+  <button
+    type="button"
+    onClick={() => setOpenVotd(true)}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${T.primary}`,
+      background: "transparent",
+      color: T.text,
+      cursor: "pointer",
+      fontSize: 13,
+    }}
+  >
+    Short commentary &amp; application
+  </button>
+</div>
+
+{/* Mount the commentary modal right under the card content */}
+<VotdCommentaryModal
+  open={openVotd}
+  onClose={() => setOpenVotd(false)}
+  verseRef={v.ref}
+  verseText={v.text}
+  topic={user.selectedVerseTopic}
+/>
+
 </>
           ) : (
             <em>Add verses to this topic to enable VOTD.</em>
@@ -1821,6 +1851,172 @@ function CalmBreathModal({
   );
 }
 
+/** =================== VotdCommentaryModal (scholarly short notes + marriage application) =================== */
+
+type VotdNote = { commentary: string; application: string };
+
+/** Curated short notes for the verses you ship in SeedVersesByTopic. */
+const VOTD_NOTES: Record<string, VotdNote> = {
+  "James 1:19": {
+    commentary:
+      "Context: James writes to scattered Jewish Christians (Jas 1:1), blending wisdom and prophetic exhortation. The triad “swift to hear, slow to speak, slow to wrath” echoes Israel’s wisdom tradition (cf. Prov) and frames true piety not as mere speech but receptive obedience (see 1:22–25). Language: “swift to hear” (ταχύς εἰς τὸ ἀκοῦσαι) prioritizes attentive, teachable posture; “slow to speak/anger” (βραδύς) counters impulsive, self-assertive rhetoric. Theology: verse 20 grounds this in God’s righteousness—human anger fails to produce God’s covenantal rightness in community.",
+    application:
+      "Marriage: Practice a ‘listening first’ rule—one spouse summarizes the other before responding. Set a 2-minute “slow to speak” pause in tense moments. Replace quick rebuttals with clarifying questions (“What I hear you saying is… Did I get that right?”)."
+  },
+
+  "Proverbs 15:1": {
+    commentary:
+      "Genre: Hebrew proverb with antithetic parallelism. “Soft answer” (מַעֲנֶה־רַךְ) signals gentle, de-escalating speech; “grievous word” (דְּבַר־עֶצֶב, painful/hurtful) provokes anger. Wisdom frames speech as a tool shaping relational climate. Culturally, the proverb speaks to honor dynamics: restraint maintains honor without shaming the other.",
+    application:
+      "Marriage: Agree on a shared de-escalation phrase (e.g., “soft start-up”). Read tone before words. If either senses rising heat, switch to gentle statements of impact and need (“When X happens, I feel Y; could we try Z?”)."
+  },
+
+  "Ephesians 4:32": {
+    commentary:
+      "Context: In the “new-life” section (Eph 4–5), Paul grounds ethics in union with Christ. “Kind… tenderhearted… forgiving” culminates the put-off/put-on pattern. Language: “forgiving” (χαριζόμενοι) highlights grace as the pattern—extend favor as those favored in Christ. Theology: The cross supplies the logic and power for forgiveness in everyday wrongs.",
+    application:
+      "Marriage: Keep a short list. Build a weekly check-in: name small hurts, ask forgiveness without excuses, and grant it explicitly. Tie forgiveness to prayer (“Father, as you forgave us in Christ, help us forgive one another”)."
+  },
+
+  "Colossians 3:13": {
+    commentary:
+      "Context: As God’s chosen people (Col 3:12), the church wears Christlike virtues. Language: “bearing with” (ἀνεχόμενοι) expects ordinary friction; “forgiving” (χαριζόμενοι) mirrors the Lord’s prior forgiveness. Theology: In Christ’s body, forgiveness is not optional but constitutive of our identity.",
+    application:
+      "Marriage: Pre-decide your posture: we will absorb minor irritations in love, and address patterns with humility. Use a repair script: “I was wrong when I ____. Will you forgive me?”"
+  },
+
+  "Ephesians 4:3": {
+    commentary:
+      "Context: Paul urges unity rooted in one body/Spirit/hope (4:4–6). Language: “eagerly maintain” (σπουδάζοντες) indicates diligence; unity already given by the Spirit must be guarded. Theology: Peace is both a gift and a task—kept through lowliness, gentleness, patience (4:2).",
+    application:
+      "Marriage: Treat unity as something you ‘maintain’: schedule a weekly 20-minute sync (calendar it). Pray for one-mindedness before high-stakes decisions. Define what ‘bond of peace’ looks like in your home (tone, timing, touch)."
+  },
+
+  "Philippians 2:2": {
+    commentary:
+      "Context: Paul aims for communal ‘same mind’ shaped by the Christ-hymn (2:6–11). Language: like-mindedness (τὸ αὐτὸ φρονεῖν) is not uniformity but shared outlook formed by Christ’s humility. Theology: Joy grows where mutual love replaces self-advancement (2:3–4).",
+    application:
+      "Marriage: Before decisions, name your shared goal first (“What outcome serves ‘us’?”). Use a ‘we-first’ checklist: mutual understanding, mutual win, mutual timing."
+  },
+
+  "Proverbs 3:3": {
+    commentary:
+      "Language: ‘Mercy and truth’ (חֶסֶד וֶאֱמֶת; ḥesed & ’emet) are covenant love and reliability—God’s own attributes (Exod 34:6). Inscribe them internally (“tablet of your heart”) and externally (“about your neck”). Theology: Formation is both heart and habit.",
+    application:
+      "Marriage: Choose one ‘mercy’ habit (unearned kindness) and one ‘truth’ habit (honest check-in). Example: daily blessing text + weekly 10-minute candor review."
+  },
+
+  "Philippians 2:3": {
+    commentary:
+      "Language: ‘Vainglory’ (κενοδοξία) is empty status-seeking; ‘lowliness’ (ταπεινοφροσύνη) is Christ-shaped self-placement. Theology: Gospel humility values the other as weighty (δοκεῖν—regard).",
+    application:
+      "Marriage: In conflict, ask: “What in my spouse can I honor right now?” Practice ‘first-honor’: begin hard talks with a true affirmation of the other’s intent or effort."
+  },
+
+  "Galatians 5:22–23": {
+    commentary:
+      "Context: The fruit contrasts the ‘works of the flesh’ (5:19–21). Language: singular ‘fruit’ (καρπός)—one Spirit-grown character cluster. ‘Temperance’ (ἐγκράτεια) is Spirit-enabled self-governance. Theology: Growth is organic—rooted in life with the Spirit (5:16, 25).",
+    application:
+      "Marriage: Pick one fruit for a 14-day focus (e.g., patience). Define 2 behaviors that embody it (e.g., wait 3 seconds before replying; paraphrase before disagreeing). Review progress together."
+  },
+};
+
+/** Fallback if a verse ref isn’t in VOTD_NOTES yet. */
+function buildGenericVotdNote(topic: VerseTopic, ref: string, text: string): VotdNote {
+  const generic =
+    "Context: Read the verse within its paragraph and book to see argument flow. Language: Note key words and any repeated terms; ask how they function. Theology: What does this say about God’s character and His purposes for His people?";
+  const apply =
+    `Marriage: In light of ${ref}, choose one small behavior that embodies this for your spouse today. Name it, calendar it, and review together this week.`;
+  return { commentary: generic, application: apply };
+}
+
+function VotdCommentaryModal({
+  open,
+  onClose,
+  verseRef,
+  verseText,
+  topic,
+}: {
+  open: boolean;
+  onClose: () => void;
+  verseRef: string;
+  verseText: string;
+  topic: VerseTopic;
+}) {
+  const T = useT();
+  if (!open) return null;
+  const note = VOTD_NOTES[verseRef] ?? buildGenericVotdNote(topic, verseRef, verseText);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Short commentary and application"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 1000,
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 720,
+          width: "100%",
+          maxHeight: "80vh",
+          overflow: "auto",
+          background: T.card,
+          border: `1px solid ${T.soft}`,
+          borderRadius: 14,
+          boxShadow: T.shadow,
+          color: T.text,
+          padding: 16,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>Short commentary &amp; application</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: `1px solid ${T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Verse header */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800 }}>{verseRef}</div>
+          <blockquote style={{ margin: "6px 0 0 0", fontSize: 15, lineHeight: 1.6 }}>{verseText}</blockquote>
+        </div>
+
+        {/* Commentary */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Commentary (short)</div>
+          <p style={{ marginTop: 0, lineHeight: 1.6 }}>{note.commentary}</p>
+        </div>
+
+        {/* Application to marriage */}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>How this relates to marriage</div>
+          <p style={{ marginTop: 0, lineHeight: 1.6 }}>{note.application}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
