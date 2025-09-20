@@ -459,24 +459,147 @@ const LessonsIndex = [
   },
 ];
 
-// === Style-specific coaching tips (NEW) ===
-const STYLE_TIPS: Record<ConflictStyle, string[]> = {
-  Avoidant: [
-    "Name the issue—don’t delay.",
-    "Schedule the talk, don’t escape.",
-    "Use “I feel…” to enter gently.",
-  ],
-  Competitive: [
-    "Understand before being understood.",
-    "Ask two curious questions first.",
-    "Affirm feelings; win together.",
-  ],
-  Cooperative: [
-    "Summarize first, invite correction.",
-    "Brainstorm options together.",
-    "Pray briefly before deciding.",
-  ],
+// ===================== FULL LESSON (ARTICLE) PAGES =====================
+type LessonMeta = typeof LessonsIndex[number];
+type LessonBodyFn = (meta: LessonMeta) => string;
+
+
+/** ============ Individual lesson bodies (long-form articles; inner HTML only) ============ */
+const LESSON_BODIES: Record<string, LessonBodyFn> = {
+  biblical_submission: (m) =>
+`<h1>${m.title}</h1>
+<p class="sub">${m.estMin}–15 min • Scriptures: ${m.scriptures.join(", ")} • Commentary-style lesson</p>
+
+<div class="toc"><span class="badge">Outline</span> ${m.outline.join(" • ")}</div>
+
+<h2>1) Big Idea</h2>
+<p>
+“Submission” in Scripture is a <em>Christ-shaped ordering of love</em>, never a claim of inferiority. 
+It sits within a wider call to <strong>mutual self-giving</strong> and Christlike headship that protects, nourishes, 
+and lays down power to serve (Eph 5:21–33).
+</p>
+
+<h2>2) Context</h2>
+<p>
+Ephesians was written to establish the church’s identity in Christ (chs. 1–3) and its outworked ethics (chs. 4–6). 
+Household instructions (5:22–6:9) apply the gospel to marriage, parenting, and work. 
+Note the banner command: <strong>“submitting to one another out of reverence for Christ” (Eph 5:21)</strong>.
+</p>
+
+<h2>3) Language & Exegesis</h2>
+<ul>
+  <li><strong>hypotássō</strong> (Greek “submit”) often means a <em>willed ordering</em> for the good of another or the community—not cowering or erasure of personhood.</li>
+  <li><strong>Kephalē</strong> (“head”) in 5:23 carries responsibility to <em>nourish and cherish</em> (5:29), patterned after Christ who gives himself for the church.</li>
+  <li>Imperatives: wives are called to a trusting, wise ordering; husbands are commanded to <strong>love sacrificially</strong> (5:25). The heavier verb lands on husbands.</li>
+</ul>
+
+<h2>4) Cultural Background</h2>
+<p>
+In Greco-Roman codes, husbands wielded near-absolute authority. Paul both honors household stability and <em>reforms</em> it under the lordship of Christ: 
+authority becomes <strong>cruciform service</strong>. Domination and abuse have no sanction here.
+</p>
+
+<h2>5) Theology</h2>
+<p>
+Marriage is a living parable of Christ and the church (5:32). Roles are not about rank but <strong>displaying the gospel</strong>: 
+he gives himself; she responds in trust; together they grow in holy unity.
+</p>
+
+<h2>6) Guardrails (What this <em>doesn’t</em> mean)</h2>
+<ul>
+  <li><strong>Never</strong> a justification for abuse, coercion, or law-breaking. Seek help and safety when harm is present.</li>
+  <li>Not a gag order on a wife’s wisdom (cf. Prov 31). Mutual counsel is assumed.</li>
+  <li>Not male perfection: husbands are called to repent and grow as servant-leaders.</li>
+</ul>
+
+<h2>7) Application to Marriage</h2>
+<ul>
+  <li><strong>Shared Discernment Rhythm:</strong> Pray, seek Scripture, list options, and decide as one. Where stuck, husbands lead by <em>bearing the cost</em> of love, not by demanding.</li>
+  <li><strong>Honor & Voice:</strong> Create a norm that the wife’s concerns are surfaced first and summarized back accurately before moving to action.</li>
+  <li><strong>Servant Headship Plan:</strong> Husbands identify two weekly ways to “nourish and cherish” (time, protection of margin, tangible care).</li>
+</ul>
+
+<h2>8) Christ at the Center</h2>
+<p>
+Christ is the pattern and power. His cross resets how we wield influence: not grasping, but giving. 
+His Spirit produces the fruit (Gal 5:22–23) that makes this beautiful in ordinary life.
+</p>
+
+<div class="hr"></div>
+<h3>Practice This Week</h3>
+<ol>
+  <li>Read <span class="ref">Eph 5:21–33</span> together. Each shares one fear and one hope about biblical submission/headship.</li>
+  <li>Write a 2-sentence “serve plan” for the week: one way to prefer your spouse’s good.</li>
+  <li>Pray: “Lord Jesus, make our marriage a living picture of your love.”</li>
+</ol>
+
+<div class="cta"><button onclick="window.print()">Print</button></div>`,
+
+  theology_of_sin: (m) =>
+`<h1>${m.title}</h1>
+<p class="sub">${m.estMin}–18 min • Scriptures: ${m.scriptures.join(", ")} • Commentary-style lesson</p>
+
+<div class="toc"><span class="badge">Outline</span> ${m.outline.join(" • ")}</div>
+
+<h2>1) Big Idea</h2>
+<p>
+Sin is both <em>lawlessness</em> and <em>misdirected love</em>—it fractures our fellowship with God and one another. 
+Repair requires <strong>confession, repentance, and faith</strong> in Christ who cleanses, reconciles, and empowers new obedience.
+</p>
+
+<h2>2) Word & Text Notes</h2>
+<ul>
+  <li><strong>Hamartía</strong> (Greek): “missing the mark”—failure to aim at God’s glory (Rom 3:23).</li>
+  <li><strong>Peshaʿ</strong> (Hebrew): rebellion/treachery—covenant breach (e.g., Ps 51).</li>
+  <li><strong>1 John 1:9</strong>: God is faithful and just to forgive and cleanse—because of Christ’s atonement.</li>
+</ul>
+
+<h2>3) Theological Frame</h2>
+<p>
+Sin is vertical (against God) and horizontal (against neighbor/spouse). Christ’s cross addresses both—justification before God and reconciliation within relationships.
+</p>
+
+<h2>4) Why We Avoid Repair</h2>
+<ul>
+  <li>Self-justification (“I had to”).</li>
+  <li>Shame and hiding (Gen 3 echoes).</li>
+  <li>Pride (protecting self-image).</li>
+</ul>
+
+<h2>5) Gospel Repair Path (Personal & Marriage)</h2>
+<ol>
+  <li><strong>Conviction:</strong> Name the specific wrong without defensiveness.</li>
+  <li><strong>Confession:</strong> To God first (Ps 51), then to spouse: “I was wrong when I ____. No excuse.”</li>
+  <li><strong>Repentance:</strong> Turn from the pattern; make a concrete plan to walk differently.</li>
+  <li><strong>Receiving Forgiveness:</strong> Believe the promise (<span class="ref">1 Jn 1:9</span>); in marriage, say and hear the words: “I forgive you.”</li>
+  <li><strong>Repair Actions:</strong> Where possible, make restitution and rebuild trust with consistent fruit (Luke 3:8).</li>
+</ol>
+
+<h2>6) Common Marital Sin Patterns</h2>
+<ul>
+  <li><strong>Withdrawing</strong> (avoidant self-protection).</li>
+  <li><strong>Domineering</strong> (control, harshness).</li>
+  <li><strong>Scorekeeping</strong> (weaponized memory).</li>
+  <li><strong>Deceit</strong> (image management).</li>
+</ul>
+
+<h2>7) Christ at the Center</h2>
+<p>
+Jesus is our substitute and shepherd. He bears guilt, breaks sin’s dominion, and gives his Spirit. 
+Repair isn’t willpower—it’s grace-powered honesty and new obedience in Him.
+</p>
+
+<div class="hr"></div>
+<h3>Practice This Week</h3>
+<ul>
+  <li><strong>Evening 5-Minute Examen:</strong> Where did I fail to love today? Confess to God; share one item with your spouse.</li>
+  <li><strong>Repair Script:</strong> “I was wrong when I ____. It hurt you by ____. Will you forgive me?”</li>
+  <li><strong>Fruit Plan:</strong> Choose 1 replacement behavior (Eph 4 pattern: put off / put on).</li>
+</ul>
+
+<div class="cta"><button onclick="window.print()">Print</button></div>`
 };
+
 
 // === Conflict Style Assessment Questions (NEW) ===
 type Q = { id: string; prompt: string; options: { label: string; style: ConflictStyle }[] };
@@ -1232,9 +1355,126 @@ const prayer = React.useMemo(
 }
 
 /* -------------------- LESSONS -------------------- */
+function LessonModal({
+  open,
+  onClose,
+  lessonId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  lessonId: string | null;
+}) {
+  const T = useT();
+  if (!open || !lessonId) return null;
+
+  const meta = LessonsIndex.find((l) => l.id === lessonId) || null;
+  const bodyBuilder = LESSON_BODIES[lessonId];
+  const inner = meta && bodyBuilder ? bodyBuilder(meta) : null;
+
+  if (!inner) {
+    // Safety fallback — should not happen if ids match
+    return null;
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Full lesson"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 1000,
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        role="document"
+        style={{
+          maxWidth: 880,
+          width: "100%",
+          maxHeight: "85vh",
+          overflow: "auto",
+          background: T.card,
+          border: `1px solid ${T.soft}`,
+          borderRadius: 14,
+          boxShadow: T.shadow,
+          color: T.text,
+          padding: 18,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>{meta?.title ?? "Lesson"}</h3>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        {/* Local CSS for the lesson body (matches the classes used in your HTML) */}
+        <style>{`
+          .sub { color: ${T.muted}; margin: 0 0 16px; font-size: 14px; }
+          .hr { height: 1px; background: ${T.soft}; margin: 18px 0; }
+          .badge { display: inline-block; font-size: 12px; border: 1px solid ${T.soft}; padding: 4px 8px; border-radius: 999px; color: ${T.muted}; }
+          .toc { margin: 10px 0 14px; font-size: 14px; color: ${T.muted}; }
+          .ref, code { background: rgba(127,127,127,.12); padding: 2px 6px; border-radius: 6px; }
+          h1 { font-size: 28px; margin: 4px 0 4px; }
+          h2 { font-size: 20px; margin: 22px 0 8px; }
+          h3 { font-size: 16px; margin: 16px 0 6px; }
+          p, li, blockquote { line-height: 1.65; }
+          blockquote { margin: 8px 0; padding-left: 14px; border-left: 3px solid ${T.primary}; }
+          a { color: ${T.primary}; }
+          @media print { 
+            [aria-modal="true"] { position: static; inset: auto; background: transparent; }
+            button { display: none; }
+          }
+        `}</style>
+
+        {/* The long-form lesson HTML */}
+        <div dangerouslySetInnerHTML={{ __html: inner }} />
+      </div>
+    </div>
+  );
+}
 
 function Lessons() {
-const T = useT();
+  const T = useT();
+  const [openLessonId, setOpenLessonId] = useState<string | null>(null);
+
   return (
     <>
       {LessonsIndex.map((lsn) => (
@@ -1253,11 +1493,29 @@ const T = useT();
           <div style={{ marginTop: 8, fontSize: 13, color: T.muted }}>
             Commentaries / authors to consult: {lsn.commentaryRefs.join("; ")}
           </div>
+          <div style={{ marginTop: 10 }}>
+            {/* was: openFullLesson(lsn.id) */}
+<PrimaryButton
+  T={T}
+  variant="accent"
+  onClick={() => setOpenLessonId(lsn.id)}
+>
+              Open full lesson
+            </PrimaryButton>
+          </div>
         </Card>
       ))}
+
       <Card title="Add More Lessons">
         <div>Drop new items into <code>LessonsIndex</code> (id, title, outline, scriptures, commentaryRefs).</div>
       </Card>
+
+      {/* Mount the full-lesson modal once, driven by the state */}
+      <LessonModal
+        open={!!openLessonId}
+        lessonId={openLessonId}
+        onClose={() => setOpenLessonId(null)}
+      />
     </>
   );
 }
@@ -1538,6 +1796,30 @@ function Profile() {
 }
 
 /* -------------------- ASSESSMENTS -------------------- */
+const STYLE_TIPS: Record<ConflictStyle, string[]> = {
+  Avoidant: [
+    "Say what you need in one sentence before taking space.",
+    "Schedule a return time when you step away (e.g., 'back at 7:30').",
+    "Share one feeling, one fact, and one ask when you re-engage.",
+    "Use 'I feel… when… because… I need…' to start.",
+    "Practice micro-brave: one honest sentence per day."
+  ],
+  Competitive: [
+    "Lead with a summary of your spouse’s point before yours.",
+    "Ask one clarifying question before making a case.",
+    "Trade winning for understanding; aim for a joint win.",
+    "Lower volume first; clarity beats intensity.",
+    "Name impact + offer repair when you notice pushing."
+  ],
+  Cooperative: [
+    "Time-box collaboration so decisions actually land.",
+    "When stuck, propose 2 concrete options with pros/cons.",
+    "Guard against overfunctioning; invite shared ownership.",
+    "Reflect feelings briefly, then move to next-step planning.",
+    "Close with: 'What’s our one small step this week?'"
+  ],
+};
+
 /* === CoachTips — style-aware tip list (restored) === */
 function CoachTips({
   primary,
