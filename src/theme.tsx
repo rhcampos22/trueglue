@@ -7,6 +7,7 @@ export const TG_LIGHT = {
   primary: "#8A1538",
   primaryDim: "#B44B66",
   accent: "#D4AF37",
+  onAccent: "#000000",
   bg: "#FAF9FB",
   surface: "#FFFFFF",
   text: "#1F2430",

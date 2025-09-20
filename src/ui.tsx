@@ -10,6 +10,10 @@ export type Theme = {
   muted: string;
   primary: string;
   accent: string;
+  /** text color when placed on primary background */
+  onPrimary: string;
+  /** text color when placed on accent background */
+  onAccent: string;
   success: string;
   danger: string;
   shadow: string;
@@ -26,11 +30,15 @@ export function useT(): Theme {
     muted: colors.textDim,
     primary: colors.primary,
     accent: colors.accent,
+    // Fallbacks ensure you don't have to touch theme.tsx right now
+    onPrimary: (colors as any).onPrimary ?? "#001315",
+    onAccent:  (colors as any).onAccent  ?? "#000000",
     success: (colors as any).success ?? "#3BB273",
     danger: (colors as any).danger ?? "#E85C5C",
-    shadow: theme === "dark"
-      ? "0 10px 28px rgba(0,0,0,0.35)"
-      : "0 10px 28px rgba(0,0,0,0.08)",
+    shadow:
+      theme === "dark"
+        ? "0 10px 28px rgba(0,0,0,0.35)"
+        : "0 10px 28px rgba(0,0,0,0.08)",
   };
 }
 
@@ -48,29 +56,60 @@ export function cardStyle(T: Theme): React.CSSProperties {
 
 // Buttons that visually match your ConflictWorkflow
 export function PrimaryButton({
-  children, onClick, disabled, T,
+  children,
+  onClick,
+  disabled,
+  T,
+  variant = "primary",
+  style,
+  ...props
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   T: Theme;
-}) {
+  variant?: "primary" | "accent" | "outline";
+  style?: React.CSSProperties;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const base: React.CSSProperties = {
+    padding: "12px 16px",
+    borderRadius: 12,
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontWeight: 700,
+    border: "1px solid transparent", // use shorthand to avoid borderColor warnings
+    background: "transparent",
+    color: T.text,
+    opacity: disabled ? 0.6 : 1,
+    outline: "none",
+    boxShadow: "none",
+  };
+
+  const byVariant: Record<NonNullable<typeof variant>, React.CSSProperties> = {
+    primary: {
+      background: T.primary,
+      color: T.onPrimary,
+      border: `1px solid ${T.primary}`,
+    },
+    accent: {
+      background: T.accent,
+      color: T.onAccent,
+      border: `1px solid ${T.accent}`,
+    },
+    outline: {
+      background: "transparent",
+      color: T.text,
+      border: `1px solid ${T.soft}`,
+    },
+  };
+
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{
-        border: "none",
-        borderRadius: 12,
-        padding: "12px 16px",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontWeight: 700,
-        background: T.primary,
-        color: "#001315",
-        opacity: disabled ? 0.6 : 1,
-        outline: "none",
-      }}
-      onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+      {...props}
+      style={{ ...base, ...byVariant[variant], ...style }}
+      onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px rgba(47,165,165,.35)")}
       onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
     >
       {children}
