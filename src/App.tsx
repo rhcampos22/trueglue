@@ -254,7 +254,6 @@ export type TGRoute =
   | "profile"
   | "workflow"
   | "assessments"
-  | "calm"
   | "church";
 
 /** Single source of truth for topics (prevents duplicate type declarations) */
@@ -576,6 +575,26 @@ export function randIndex<T>(arr: T[], seed: number) {
   return arr.length ? seed % arr.length : 0;
 }
 
+function streak(dates: string[]): number {
+  if (!Array.isArray(dates) || dates.length === 0) return 0;
+  const set = new Set(dates);
+  let s = 0;
+  let day = todayISO();
+  while (set.has(day)) {
+    s++;
+    day = dateAdd(day, -1);
+  }
+  return s;
+}
+
+async function copy(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // clipboard may not be available in some contexts (no-op)
+  }
+}
+
 /* -------------------- CONTEXT -------------------- */
 type AppCtx = {
   user: UserState;
@@ -590,6 +609,56 @@ function useApp() {
   const v = useContext(Ctx);
   if (!v) throw new Error("Ctx missing");
   return v;
+}
+
+// -------------------- Toast (mini) --------------------
+const ToastCtx = createContext<(msg: string) => void>(() => {});
+function useToast() {
+  return useContext(ToastCtx);
+}
+
+function ToastHost({ children }: { children: React.ReactNode }) {
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!msg) return;
+    const id = window.setTimeout(() => setMsg(null), 2000);
+    return () => window.clearTimeout(id);
+  }, [msg]);
+
+  return (
+    <ToastCtx.Provider value={setMsg}>
+      {children}
+
+      {/* Visible toast */}
+      {msg && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#000",
+            color: "#fff",
+            padding: "8px 12px",
+            borderRadius: 10,
+            opacity: 0.92,
+            zIndex: 2147483647,
+          }}
+        >
+          {msg}
+        </div>
+      )}
+
+      {/* SR-only polite live region */}
+      <div
+        aria-live="polite"
+        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+      >
+        {msg ?? ""}
+      </div>
+    </ToastCtx.Provider>
+  );
 }
 
 /* -------------------- REUSABLE ACCESSIBLE TABS (INLINE) -------------------- */
@@ -697,18 +766,22 @@ function Tabs<ID extends string>({
 export default function App() {
   return (
     <ThemeProvider>
-      <AppShell />
+      <ToastHost>
+        <AppShell />
+      </ToastHost>
     </ThemeProvider>
   );
 }
 
 function AppShell() {
+const toast = useToast();
   // Initialize route from hash BEFORE first paint to avoid flashing "Home"
   const initialRoute = ((): TGRoute => {
-    if (typeof window === "undefined") return "home";
-    const h = window.location.hash.replace("#/", "") as TGRoute;
-    return (h as TGRoute) || "home";
-  })();
+  if (typeof window === "undefined") return "home";
+  const raw = window.location.hash.replace("#/", "");
+  const mapped = raw === "calm" ? "microhabits" : raw;
+  return (mapped as TGRoute) || "home";
+})();
 
   const T = useT();
 
@@ -722,16 +795,33 @@ const appStyle: React.CSSProperties = {
   const [user, setUser] = useState<UserState>(() => loadState());
   const [route, setRoute] = useState<TGRoute>(initialRoute);
 
-  useEffect(() => saveState(user), [user]);
+  useEffect(() => {
+  const id = window.setTimeout(() => saveState(user), 200);
+  return () => window.clearTimeout(id);
+}, [user]);
 
   useEffect(() => {
-    const applyHash = () => {
-      const r = window.location.hash.replace("#/", "") as TGRoute;
-      if (r) setRoute(r);
-    };
-    window.addEventListener("hashchange", applyHash);
-    return () => window.removeEventListener("hashchange", applyHash);
-  }, []);
+  const titles: Record<TGRoute, string> = {
+  home: "Home",
+  microhabits: "Micro-Habits",
+  lessons: "Lessons",
+  workflow: "Conflict Workflow",
+  assessments: "Assessments",
+  profile: "Profile",
+  church: "Church",
+};
+  document.title = `TrueGlue — ${titles[route] ?? "App"}`;
+}, [route]);
+
+  useEffect(() => {
+  const applyHash = () => {
+    const raw = window.location.hash.replace("#/", "");
+    const mapped = raw === "calm" ? "microhabits" : raw;
+    if (mapped) setRoute(mapped as TGRoute);
+  };
+  window.addEventListener("hashchange", applyHash);
+  return () => window.removeEventListener("hashchange", applyHash);
+}, []);
 
   const api = useMemo<AppCtx>(
     () => ({
@@ -749,6 +839,7 @@ const appStyle: React.CSSProperties = {
             },
           };
           setUser(next);
+toast("Marked done");
         }
       },
       setVerseTopic: (t) => setUser({ ...user, selectedVerseTopic: t }),
@@ -796,19 +887,21 @@ const appStyle: React.CSSProperties = {
   );
 }
 
-/* -------------------- TABS + ROUTING (refactored use) -------------------- */
+/* -------------------- TABS + ROUTING -------------------- */
 type AppTabsProps = {
   route: TGRoute;
   setRoute: (r: TGRoute) => void;
 };
 
 function AppTabs({ route, setRoute }: AppTabsProps) {
+  // Theme must be read inside a component
   const T = useT();
 
+  // Now it's safe to use T inside these styles
   const pillStyleThemed: React.CSSProperties = {
     padding: "8px 12px",
     borderRadius: 999,
-    border: `1px solid ${T.soft}`,
+    border: `1px solid ${T.soft}`,    // use shorthand (prevents React warning)
     background: "transparent",
     color: T.text,
     cursor: "pointer",
@@ -817,77 +910,32 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
 
   const activePillStyleThemed: React.CSSProperties = {
     ...pillStyleThemed,
-    background: T.primary,
-    borderColor: T.primary,
-    color: "#001315",
-    boxShadow: "0 0 0 2px rgba(47,165,165,0.20)", // teal glow
+    background: "rgba(47,165,165,0.10)", // subtle teal tint
+    border: `1px solid ${T.primary}`,     // shorthand here too
+    color: T.text,
+    boxShadow: "0 0 0 2px rgba(47,165,165,0.20)",
   };
 
-  const tabItems = React.useMemo<ReadonlyArray<TabItem<TGRoute>>>(() => {
-    const base: ReadonlyArray<TabItem<TGRoute>> = [
-      { id: "home",         label: "Home",              panel: <Home /> },
-      { id: "microhabits",  label: "Micro-Habits",      panel: <MicroHabits /> },
-      { id: "lessons",      label: "Lessons",           panel: <Lessons /> },
-      { id: "workflow",     label: "Conflict Workflow", panel: <ConflictWorkflow /> },
-      { id: "assessments",  label: "Assessments",       panel: <Assessments /> },
-      { id: "profile",      label: "Profile",           panel: <Profile /> },
-    ];
-
-    if (FEATURES.churchMode) {
-      // insert “Church” after Lessons for visibility
-      const copy = base.slice();
-      const idx = copy.findIndex(t => t.id === "lessons");
-      copy.splice(idx + 1, 0, { id: "church", label: "Church", panel: <ChurchPanel /> });
-      return copy;
-    }
-    return base;
-  }, []);
-
-  const onChange = React.useCallback((id: TGRoute) => {
-    window.location.hash = `#/${id}`;
-    setRoute(id);
-  }, [setRoute]);
+  // Define your tab items (labels + panels)
+  const items: ReadonlyArray<TabItem<TGRoute>> = [
+  { id: "home",        label: "Home",            panel: <Home /> },
+  { id: "microhabits", label: "Micro-Habits",    panel: <MicroHabits /> },
+  { id: "lessons",     label: "Lessons",         panel: <Lessons /> },
+  { id: "workflow",    label: "Conflict Flow",   panel: <ConflictWorkflow /> },
+  { id: "assessments", label: "Assessments",     panel: <Assessments /> },
+  { id: "profile",     label: "Profile",         panel: <Profile /> },
+  { id: "church",      label: "Church",          panel: <ChurchPanel /> },
+];
 
   return (
     <Tabs
-      label="Primary"
+      label="Main navigation"
       value={route}
-      onChange={onChange}
-      items={tabItems}
+      onChange={setRoute}
+      items={items}
       pillStyle={pillStyleThemed}
       activePillStyle={activePillStyleThemed}
     />
-  );
-}
-
-// === CoachTips (NEW) — style-aware tip list ===
-function CoachTips({
-  primary,
-  secondary,
-}: {
-  primary?: ConflictStyle;
-  secondary?: ConflictStyle;
-}) {
-const T = useT();
-  const tips = [
-    ...(primary ? STYLE_TIPS[primary] : []),
-    ...(secondary && secondary !== primary ? STYLE_TIPS[secondary] : []),
-  ].slice(0, 5);
-
-  if (!tips.length) {
-    return (
-      <div style={{ color: T.muted, fontSize: 13 }}>
-        Take the assessment to unlock personalized tips.
-      </div>
-    );
-  }
-
-  return (
-    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-      {tips.map((t, i) => (
-        <li key={i}>{t}</li>
-      ))}
-    </ul>
   );
 }
 
@@ -914,6 +962,7 @@ function Card(p: React.PropsWithChildren<{ title: string; sub?: string }>) {
 }
 
 function Home() {
+  const toast = useToast();
   const T = useT();
   const { user, setVerseTopic } = useApp();
   const day = new Date();
@@ -951,9 +1000,26 @@ function Home() {
         <div style={{ marginTop: 12, lineHeight: 1.5 }}>
           {v ? (
             <>
-              <blockquote style={{ margin: 0, fontSize: 15 }}>{v.text}</blockquote>
-              <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
-            </>
+  <blockquote style={{ margin: 0, fontSize: 15 }}>{v.text}</blockquote>
+  <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
+  <div style={{ marginTop: 8 }}>
+    <button
+      type="button"
+      onClick={() => { copy(`"${v.text}" — ${v.ref}`); toast("Verse copied"); }}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${T.primary}`,
+        background: "transparent",
+        color: T.text,
+        cursor: "pointer",
+        fontSize: 13,
+      }}
+    >
+      Copy verse
+    </button>
+  </div>
+</>
           ) : (
             <em>Add verses to this topic to enable VOTD.</em>
           )}
@@ -976,6 +1042,7 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
   const T = useT();
   const { user, completeHabit } = useApp();
   const done = (user.completedHabits[id] ?? []).includes(todayISO());
+  const s = streak(user.completedHabits[id] ?? []);
   return (
     <div
       style={{
@@ -1001,9 +1068,12 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
         }}
       />
       <div>
-        <div style={{ fontWeight: 600, color: T.text }}>{title}</div>
-        <div style={{ fontSize: 13, color: T.muted }}>{tip}</div>
-      </div>
+  <div style={{ fontWeight: 600, color: T.text }}>{title}</div>
+  <div style={{ fontSize: 13, color: T.muted }}>{tip}</div>
+  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+    Streak: {s} day{s === 1 ? "" : "s"}
+  </div>
+</div>
       <button
         type="button"
         onClick={() => completeHabit(id)}
@@ -1027,10 +1097,17 @@ function HabitRow({ id, title, tip }: { id: MicroHabitId; title: string; tip: st
 }
 
 function MicroHabits() {
+  const toast = useToast();
   const T = useT();
   const dayIndex = localDaySeed();
-  const loveMap = LoveMapQuestions[randIndex(LoveMapQuestions, dayIndex)];
-  const prayer = PrayerNudges[randIndex(PrayerNudges, dayIndex)];
+const loveMap = React.useMemo(
+  () => LoveMapQuestions[randIndex(LoveMapQuestions, dayIndex)],
+  [dayIndex]
+);
+const prayer = React.useMemo(
+  () => PrayerNudges[randIndex(PrayerNudges, dayIndex)],
+  [dayIndex]
+);
   const [openCalm, setOpenCalm] = React.useState(false);
 
   return (
@@ -1045,11 +1122,47 @@ function MicroHabits() {
 
       <Card title="Love Map — Question of the Day">
         <div style={{ marginBottom: 10, fontWeight: 600 }}>{loveMap}</div>
+<div>
+  <button
+    type="button"
+    onClick={() => { copy(`Love Map: ${loveMap}`); toast("Question copied"); }}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${T.primary}`,
+      background: "transparent",
+      color: T.text,
+      cursor: "pointer",
+      fontSize: 13,
+      marginBottom: 10,
+    }}
+  >
+    Copy question
+  </button>
+</div>
         <HabitRow id="loveMap" title="Answer together" tip="Keep it under 2 minutes." />
       </Card>
 
       <Card title="Prayer Nudge">
         <div style={{ marginBottom: 10 }}>{prayer}</div>
+<div>
+  <button
+    type="button"
+    onClick={() => { copy(`Prayer nudge: ${prayer}`); toast("Prayer copied"); }}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${T.primary}`,
+      background: "transparent",
+      color: T.text,
+      cursor: "pointer",
+      fontSize: 13,
+      marginBottom: 10,
+    }}
+  >
+    Copy prayer
+  </button>
+</div>
         <HabitRow id="prayer" title="Pray for 30 seconds" tip="Short and sincere." />
       </Card>
 
@@ -1059,9 +1172,9 @@ function MicroHabits() {
           Inhale 4 • Hold 4 • Exhale 6 — repeat gently. You can proceed at any time.
         </div>
         <div style={{ marginBottom: 10 }}>
-         <PrimaryButton T={T} onClick={() => setOpenCalm(true)}>
+         <PrimaryButton T={T} variant="accent" onClick={() => setOpenCalm(true)}>
   Open Calm Timer
-</PrimaryButton> 
+</PrimaryButton>
         </div>
         <HabitRow
           id="calmBreath"
@@ -1395,13 +1508,46 @@ function Profile() {
 }
 
 /* -------------------- ASSESSMENTS -------------------- */
+/* === CoachTips — style-aware tip list (restored) === */
+function CoachTips({
+  primary,
+  secondary,
+}: {
+  primary?: ConflictStyle;
+  secondary?: ConflictStyle;
+}) {
+  const T = useT();
+  const tips = [
+    ...(primary ? STYLE_TIPS[primary] : []),
+    ...(secondary && secondary !== primary ? STYLE_TIPS[secondary] : []),
+  ].slice(0, 5);
+
+  if (!tips.length) {
+    return (
+      <div style={{ color: T.muted, fontSize: 13 }}>
+        Take the assessment to unlock personalized tips.
+      </div>
+    );
+  }
+
+  return (
+    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+      {tips.map((t, i) => (
+        <li key={i}>{t}</li>
+      ))}
+    </ul>
+  );
+}
+
 function Assessments() {
+  const toast = useToast();
   const { user, setUser } = useApp();
   const [show, setShow] = useState(false);
   const T = useT();
+
   return (
     <>
-            <section style={{ ...cardStyle(T), marginBottom: 16 }}>
+      <section style={{ ...cardStyle(T), marginBottom: 16 }}>
         <h3 style={{ margin: 0 }}>Your Conflict Style</h3>
 
         {/* Summary pills */}
@@ -1412,12 +1558,16 @@ function Assessments() {
 
         {/* CTA */}
         <div style={{ marginTop: 12 }}>
-          <PrimaryButton T={T} onClick={() => setShow(true)}>
+          <PrimaryButton
+            T={T}
+            variant="accent"
+            onClick={() => setShow(true)}
+          >
             {user.stylePrimary ? "Retake Assessment" : "Take Assessment"}
           </PrimaryButton>
         </div>
 
-        {/* Personalized tips inline (kept as-is, just themed spacing) */}
+        {/* Personalized tips inline */}
         <div style={{ marginTop: 14 }}>
           <CoachTips primary={user.stylePrimary} secondary={user.styleSecondary} />
         </div>
@@ -1429,6 +1579,7 @@ function Assessments() {
           onFinish={(primary, secondary) => {
             setUser({ ...user, stylePrimary: primary, styleSecondary: secondary });
             setShow(false);
+            toast("Assessment saved");
           }}
         />
       )}
@@ -1451,18 +1602,57 @@ function CalmBreathModal({
   scripture?: string;
 }) {
   const T = useT();
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const [sec, setSec] = React.useState(seconds);
   const [running, setRunning] = React.useState(true);
   const intervalRef = React.useRef<number | null>(null);
 
-  // Reset each time it opens
+  // Focus first tabbable when opened
+  React.useEffect(() => {
+    if (!open) return;
+    const first = rootRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    first?.focus();
+  }, [open]);
+
+  // Keyboard tab trap (stay within modal)
+  function handleTabTrap(e: KeyboardEvent) {
+    if (e.key !== "Tab") return;
+    const nodes = rootRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (!nodes || nodes.length === 0) return;
+
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+
+    if (e.shiftKey && active === first) {
+      last.focus();
+      e.preventDefault();
+    } else if (!e.shiftKey && active === last) {
+      first.focus();
+      e.preventDefault();
+    }
+  }
+
+  // Attach/detach keydown handler while open
+  React.useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => handleTabTrap(e);
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [open]);
+
+  // Reset on open or when `seconds` changes
   React.useEffect(() => {
     if (!open) return;
     setSec(seconds);
     setRunning(true);
   }, [open, seconds]);
 
-  // Safe interval management
+  // Safe interval management for countdown
   React.useEffect(() => {
     if (!open || !running) {
       if (intervalRef.current) {
@@ -1474,6 +1664,7 @@ function CalmBreathModal({
     intervalRef.current = window.setInterval(() => {
       setSec((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
+
     return () => {
       if (intervalRef.current) {
         window.clearInterval(intervalRef.current);
@@ -1486,8 +1677,10 @@ function CalmBreathModal({
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-modal="true"
+      aria-label="Calm breathing timer"
       style={{
         position: "fixed",
         inset: 0,
@@ -1498,47 +1691,51 @@ function CalmBreathModal({
         padding: 16,
       }}
     >
+      {/* Correct, separate CSS blocks */}
       <style>{`
         @keyframes tg-breathe {
           0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
           50%  { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(138,21,56,.08); }
           100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
         }
+        @media (prefers-reduced-motion: reduce) {
+          [aria-label="Breathing animation"] { animation: none !important; }
+        }
       `}</style>
 
       <div
         style={{
-  maxWidth: 640,
-  width: "100%",
-  background: T.card,
-  border: `1px solid ${T.soft}`,
-  borderRadius: 14,
-  boxShadow: T.shadow,
-  color: T.text,
-  padding: 16,
-}}
+          maxWidth: 640,
+          width: "100%",
+          background: T.card,
+          border: `1px solid ${T.soft}`,
+          borderRadius: 14,
+          boxShadow: T.shadow,
+          color: T.text,
+          padding: 16,
+        }}
       >
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}></h3>
+          <h3 style={{ margin: 0 }}>Breathe and pray before you begin</h3>
           <button
-  type="button"
-  onClick={onClose}
-  aria-label="Close"
-  style={{
-    border: `1px solid ${T.soft}`,
-    background: "transparent",
-    color: T.text,
-    borderRadius: 10,
-    padding: "8px 12px",
-    cursor: "pointer",
-    outline: "none",
-  }}
-  onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
-  onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
->
-  ✕
-</button>
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              border: `1px solid ${T.soft}`,
+              background: "transparent",
+              color: T.text,
+              borderRadius: 10,
+              padding: "8px 12px",
+              cursor: "pointer",
+              outline: "none",
+            }}
+            onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+            onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+          >
+            ✕
+          </button>
         </div>
 
         {/* Ring */}
@@ -1556,7 +1753,7 @@ function CalmBreathModal({
               background: "transparent",
             }}
           >
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Breathe</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Breathe &amp; Pray</div>
           </div>
         </div>
 
@@ -1567,14 +1764,30 @@ function CalmBreathModal({
             <button
               type="button"
               onClick={onProceed}
-              style={{ ...pillStyle, borderColor: T.primary }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: `1px solid ${T.primary}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
             >
               Proceed
             </button>
             <button
               type="button"
               onClick={() => setRunning((r) => !r)}
-              style={pillStyle}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
             >
               {running ? "Pause" : "Resume"}
             </button>
@@ -1584,7 +1797,15 @@ function CalmBreathModal({
                 setRunning(false);
                 setSec(seconds);
               }}
-              style={pillStyle}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
             >
               Reset
             </button>
@@ -1597,35 +1818,6 @@ function CalmBreathModal({
         </p>
       </div>
     </div>
-  );
-}
-
-/* -------------------- CALM TOOLS (breathing modal) -------------------- */
-function CalmTools() {
-  const [open, setOpen] = React.useState(true); // auto-open when visiting the Calm tab
-  const T = useT();
-  return (
-    <>
-      {/* A simple card that lets users reopen the modal */}
-      <Card title="Calm — Breathe & Pray">
-        <div style={{ lineHeight: 1.6 }}>
-          Use this before a tough conversation. You can proceed at any time—you don’t have to wait the full 60 seconds.
-        </div>
-        <div style={{ marginTop: 10 }}>
-          <PrimaryButton T={T} onClick={() => setOpen(true)}>
-  Open Calm Timer
-</PrimaryButton>
-        </div>
-      </Card>
-
-      <CalmBreathModal
-        open={open}
-        onClose={() => setOpen(false)}
-        onProceed={() => setOpen(false)}
-        seconds={60}
-        scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
-      />
-    </>
   );
 }
 
