@@ -1192,6 +1192,124 @@ const prayer = React.useMemo(
 }
 
 /* -------------------- LESSONS -------------------- */
+// -------------------- LessonModal (Full-lesson modal) --------------------
+function LessonModal({
+  open,
+  lessonId,
+  onClose,
+}: {
+  open: boolean;
+  lessonId: string | null;
+  onClose: () => void;
+}) {
+  const T = useT();
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  // Close on Escape, lock scroll, focus trap
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  // Don’t render without data
+  if (!open || !lessonId) return null;
+
+  const meta = LessonsIndex.find((l) => l.id === lessonId);
+  const bodyFn = meta ? LESSON_BODIES[lessonId] : undefined;
+
+  const html =
+    meta && bodyFn
+      ? bodyFn(meta)
+      : `<h1>Lesson coming soon</h1><p>We couldn't find the content for <code>${lessonId}</code>.</p>`;
+
+  // Render into <body> so it sits above everything
+  return createPortal(
+    <div
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={meta?.title ?? "Lesson"}
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 2147483647,
+        padding: 16,
+      }}
+    >
+      <style>{`
+        .tg-lesson {
+          max-width: 900px;
+          width: 100%;
+          max-height: 85vh;
+          overflow: auto;
+          background: ${T.card};
+          color: ${T.text};
+          border: 1px solid ${T.soft};
+          border-radius: 16px;
+          box-shadow: ${T.shadow};
+          padding: 20px;
+        }
+        .tg-lesson h1 { margin: 0; font-size: 22px; }
+        .tg-lesson .sub { color: ${T.muted}; margin-top: 6px; }
+        .tg-lesson .toc { margin-top: 10px; font-size: 13px; color: ${T.muted}; }
+        .tg-lesson .badge {
+          display: inline-block; border: 1px solid ${T.soft}; border-radius: 999px; padding: 2px 8px; margin-right: 6px;
+        }
+        .tg-lesson .hr { border-top: 1px solid ${T.soft}; margin: 16px 0; }
+        .tg-lesson .cta { margin-top: 12px; }
+        .tg-lesson .ref { font-weight: 700; }
+        .tg-lesson p, .tg-lesson li { line-height: 1.6; }
+        @media (max-width: 520px) {
+          .tg-lesson { padding: 14px; }
+        }
+      `}</style>
+
+      <div
+        className="tg-lesson"
+        onClick={(e) => e.stopPropagation()}
+        role="document"
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>
+            {meta?.title ?? "Lesson"}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: `1px solid ${T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+            aria-label="Close"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Lesson HTML */}
+        <div style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function Lessons() {
   const T = useT();
