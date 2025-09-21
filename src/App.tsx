@@ -1,29 +1,31 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
-import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
+import TrueGlueLogo from "./assets/TrueGlueLogoNoText.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
 import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
 import { createPortal } from "react-dom";
 import { useT, cardStyle, focusRing, PrimaryButton, Pill } from "./ui";
 
 function ThemeTogglePortal() {
-  const { theme, toggle, colors } = useTheme();
-  const btn = (
+  const { theme, toggle, colors } = useTheme();  // call hook unconditionally
+  if (typeof document === "undefined") return null;  // then guard SSR
+  
+    const btn = (
     <button
       aria-label="Toggle light/dark theme"
       onClick={toggle}
       style={{
-  position: "fixed",
-  top: 12,
-  right: 12,
-  zIndex: 2147483647,
-  padding: "8px 12px",
-  borderRadius: 999,
-  border: `1px solid ${colors.border}`,
-  background: colors.surface,
-  color: colors.text,
-  cursor: "pointer",
-  boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-}}
+        position: "fixed",
+        top: 12,
+        right: 12,
+        zIndex: 2147483647,
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${colors.border}`,
+        background: colors.surface,
+        color: colors.text,
+        cursor: "pointer",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+      }}
     >
       {theme === "dark" ? "☾ Dark" : "☀︎ Light"}
     </button>
@@ -31,125 +33,12 @@ function ThemeTogglePortal() {
   return createPortal(btn, document.body);
 }
 
-
-// ===== Conflict Workflow: Types =====
-type UserId = "A" | "B";
-type ConflictStep =
-  | "QUALIFY"
-  | "RECIPIENT_REVIEW"
-  | "QUESTIONS_SELFCRITIQUE"
-  | "CALM_PREPARE"
-  | "SCHEDULE"
-  | "DECISION_REPAIR"
-  | "RESOLVED";
-
-type TestimonyVisibility = "private" | "church" | "community";
-
-type ConflictSession = {
-  id: string;
-  initiator: UserId;
-  recipient: UserId;
-
-  issueSentence?: string;
-  issueDetails?: string;
-  initiatorAcceptedSingleFocus?: boolean;
-  recipientAcceptedSingleFocus?: boolean;
-
-  hasPromptForRecipient?: boolean;
-  hasPromptForInitiator?: boolean;
-
-  recipientReviewSummary?: string;
-  nonhostileQuestions?: string;
-  selfCritique?: string;
-
-  calmShownToInitiator?: boolean;
-  calmShownToRecipient?: boolean;
-
-  proposedDate?: string;
-  proposedTime?: string;
-  proposedDescriptor?: string;
-  confirmedDateTimeByRecipient?: boolean;
-  rescheduleCount?: number; // max 1
-
-  decisionsAgreements?: string;
-  apologiesForgiveness?: string;
-  followUpPlan?: string;
-  recap?: string;
-
-  testimonyText?: string;
-  testimonyVisibility?: TestimonyVisibility;
-
-  step: ConflictStep;
-  createdAt: number;
-  resolvedAt?: number;
-};
-
-// ===== Conflict Workflow: Persistence (localStorage MVP) =====
-const LS_CONFLICTS = "trueglue_conflicts_v5";
-const loadConflicts = (): ConflictSession[] =>
-  JSON.parse(localStorage.getItem(LS_CONFLICTS) || "[]");
-const saveConflicts = (items: ConflictSession[]) =>
-  localStorage.setItem(LS_CONFLICTS, JSON.stringify(items));
-
 // ===== Conflict Workflow: Utilities =====
+
+/* -------------------- App Utilities (keep in App.tsx) -------------------- */
+// Used at module load to create stable IDs for the ASSESSMENT questions.
 const uid = () => Math.random().toString(36).slice(2);
-const fmtDateTime = (d: number) =>
-  new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-// “Gentle start” language guard
-const roughPhrases = [
-  /you always/i, /you never/i, /whatever/i, /shut up/i, /that’s stupid/i, /that's stupid/i, /as usual/i,
-  /everyone knows/i, /obviously/i,
-];
-const needsGentleStart = (text: string) => !!text && roughPhrases.some((r) => r.test(text));
-const gentleTemplate =
-  'Try: "I feel ⟨emotion⟩ when ⟨specific event⟩ because ⟨impact⟩. I need ⟨clear ask⟩."';
-
-// iCalendar (.ics) helpers (for proposed/confirmed schedule)
-function formatICSDateLocal(dateISO: string, timeHHMM: string) {
-  const dt = new Date(`${dateISO}T${timeHHMM || "09:00"}`);
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const d = String(dt.getDate()).padStart(2, "0");
-  const hh = String(dt.getHours()).padStart(2, "0");
-  const mm = String(dt.getMinutes()).padStart(2, "0");
-  return `${y}${m}${d}T${hh}${mm}00`;
-}
-function addMinutes(hhmm: string, mins: number) {
-  const [h, m] = hhmm.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m + mins, 0, 0);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-function escapeICS(s: string) {
-  return (s || "")
-    .replace(/[\n\r]/g, "\\n")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
-}
-function downloadICS({
-  title, description, dateISO, timeHHMM,
-}: { title: string; description: string; dateISO?: string; timeHHMM?: string }) {
-  const dtStart = dateISO ? formatICSDateLocal(dateISO, timeHHMM || "09:00") : "";
-  const dtEnd = dateISO ? formatICSDateLocal(dateISO, timeHHMM ? addMinutes(timeHHMM, 45) : "09:45") : "";
-  const body =
-`BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//TrueGlue//Conflict Meeting//EN
-BEGIN:VEVENT
-UID:${uid()}
-SUMMARY:${escapeICS(title)}
-DESCRIPTION:${escapeICS(description)}
-${dateISO ? `DTSTART:${dtStart}` : ""}
-${dateISO ? `DTEND:${dtEnd}` : ""}
-END:VEVENT
-END:VCALENDAR`;
-  const blob = new Blob([body], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "trueglue-conflict.ics"; a.click();
-  URL.revokeObjectURL(url);
-}
 
 /** ============================================================
  *  TRUEGLUE — Unified App (React + TypeScript) • Single-file entry
@@ -195,58 +84,6 @@ const navStyle: React.CSSProperties = {
   margin: "10px 0 18px",
 };
 
-const pillStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: 999,
-  border: `1px solid ${TG_COLORS.border}`,
-  background: "transparent",
-  color: "inherit",
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-const activePillStyle: React.CSSProperties = {
-  ...pillStyle,
-  background: TG_COLORS.primary,
-  borderColor: TG_COLORS.primary,
-  color: "#001315",
-  boxShadow: "0 0 0 2px rgba(47,165,165,0.20)",
-};
-
-function PillButton({
-  children,
-  onClick,
-  kind = "outline",
-  disabled = false,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  kind?: "outline" | "solid";
-  disabled?: boolean;
-}) {
-  const T = useT();
-  const base: React.CSSProperties = {
-    padding: "8px 12px",
-    borderRadius: 999,
-    border: `1px solid ${T.soft}`,
-    background: "transparent",
-    color: T.text,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-    fontSize: 13,
-  };
-  const solid: React.CSSProperties = {
-    ...base,
-    background: T.primary,
-    borderColor: T.primary,
-    color: "#001315",
-  };
-  return (
-    <button type="button" onClick={disabled ? undefined : onClick} style={kind === "solid" ? solid : base} disabled={disabled}>
-      {children}
-    </button>
-  );
-}
 
 /* -------------------- TYPES & DATA MODELS -------------------- */
 export type TGRoute =
@@ -860,7 +697,7 @@ function Tabs<ID extends string>({
               aria-selected={active}
               aria-controls={panelId}
               onClick={() => onChange(t.id)}
-              style={active ? activePillS ?? activePillStyle : pillS ?? pillStyle}
+              style={active ? (activePillS ?? {}) : (pillS ?? {})}
             >
               {t.label}
             </button>
@@ -987,7 +824,7 @@ useEffect(() => {
     setBlockNav: (on) => { navBlockRef.current = on; },
     isNavBlocked: () => navBlockRef.current,
   }),
-  [user]
+  [user, toast]   // ✅ include toast
 );
 
   return (
@@ -1355,121 +1192,6 @@ const prayer = React.useMemo(
 }
 
 /* -------------------- LESSONS -------------------- */
-function LessonModal({
-  open,
-  onClose,
-  lessonId,
-}: {
-  open: boolean;
-  onClose: () => void;
-  lessonId: string | null;
-}) {
-  const T = useT();
-  if (!open || !lessonId) return null;
-
-  const meta = LessonsIndex.find((l) => l.id === lessonId) || null;
-  const bodyBuilder = LESSON_BODIES[lessonId];
-  const inner = meta && bodyBuilder ? bodyBuilder(meta) : null;
-
-  if (!inner) {
-    // Safety fallback — should not happen if ids match
-    return null;
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Full lesson"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "grid",
-        placeItems: "center",
-        zIndex: 1000,
-        padding: 16,
-      }}
-      onClick={onClose}
-    >
-      <div
-        role="document"
-        style={{
-          maxWidth: 880,
-          width: "100%",
-          maxHeight: "85vh",
-          overflow: "auto",
-          background: T.card,
-          border: `1px solid ${T.soft}`,
-          borderRadius: 14,
-          boxShadow: T.shadow,
-          color: T.text,
-          padding: 18,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>{meta?.title ?? "Lesson"}</h3>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${T.soft}`,
-                background: "transparent",
-                color: T.text,
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              Print
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${T.soft}`,
-                background: "transparent",
-                color: T.text,
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        {/* Local CSS for the lesson body (matches the classes used in your HTML) */}
-        <style>{`
-          .sub { color: ${T.muted}; margin: 0 0 16px; font-size: 14px; }
-          .hr { height: 1px; background: ${T.soft}; margin: 18px 0; }
-          .badge { display: inline-block; font-size: 12px; border: 1px solid ${T.soft}; padding: 4px 8px; border-radius: 999px; color: ${T.muted}; }
-          .toc { margin: 10px 0 14px; font-size: 14px; color: ${T.muted}; }
-          .ref, code { background: rgba(127,127,127,.12); padding: 2px 6px; border-radius: 6px; }
-          h1 { font-size: 28px; margin: 4px 0 4px; }
-          h2 { font-size: 20px; margin: 22px 0 8px; }
-          h3 { font-size: 16px; margin: 16px 0 6px; }
-          p, li, blockquote { line-height: 1.65; }
-          blockquote { margin: 8px 0; padding-left: 14px; border-left: 3px solid ${T.primary}; }
-          a { color: ${T.primary}; }
-          @media print { 
-            [aria-modal="true"] { position: static; inset: auto; background: transparent; }
-            button { display: none; }
-          }
-        `}</style>
-
-        {/* The long-form lesson HTML */}
-        <div dangerouslySetInnerHTML={{ __html: inner }} />
-      </div>
-    </div>
-  );
-}
 
 function Lessons() {
   const T = useT();
@@ -1948,6 +1670,13 @@ function CalmBreathModal({
       e.preventDefault();
     }
   }
+  
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   // Attach/detach keydown handler while open
   React.useEffect(() => {
@@ -2212,21 +1941,25 @@ function buildGenericVotdNote(topic: VerseTopic, ref: string, text: string): Vot
   return { commentary: generic, application: apply };
 }
 
-function VotdCommentaryModal({
-  open,
-  onClose,
-  verseRef,
-  verseText,
-  topic,
-}: {
-  open: boolean;
-  onClose: () => void;
-  verseRef: string;
-  verseText: string;
-  topic: VerseTopic;
+function VotdCommentaryModal({ open, onClose, verseRef, verseText, topic }: {
+  open: boolean; onClose: () => void; verseRef: string; verseText: string; topic: VerseTopic;
 }) {
   const T = useT();
+
+  // ✨ Move hooks before any conditional return
+  const closeRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; };
+  }, [open, onClose]);
+
   if (!open) return null;
+
   const note = VOTD_NOTES[verseRef] ?? buildGenericVotdNote(topic, verseRef, verseText);
 
   return (
@@ -2262,7 +1995,8 @@ function VotdCommentaryModal({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
           <h3 style={{ margin: 0 }}>Short commentary &amp; application</h3>
           <button
-            type="button"
+            ref={closeRef}
+	    type="button"
             onClick={onClose}
             style={{
               padding: "8px 12px",

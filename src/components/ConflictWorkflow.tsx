@@ -140,6 +140,8 @@ const seedScriptures: Scripture[] = [
   { ref: "Philippians 2:4", text: "Look not only to your own interests, but also to the interests of others.", topics: ["review","empathy"] },
   { ref: "Colossians 3:13", text: "Bear with each other and forgive one another... Forgive as the Lord forgave you.", topics: ["repair","forgiveness"] },
   { ref: "1 Peter 4:8", text: "Keep loving one another earnestly, since love covers a multitude of sins.", topics: ["love","covering","hope"] },
+  { ref: "Galatians 5:22", text: "The fruit of the Spirit is love, joy, peace, patience, kindness, goodness, faithfulness...", topics: ["patience","fruit"] },
+
 ];
 type VerseTopic = "anger" | "patience" | "unity" | "forgiveness";
 const verseByTopic: Record<VerseTopic, Scripture[]> = {
@@ -225,55 +227,141 @@ function GhostButton({ children, onClick, T }: { children: React.ReactNode; onCl
   return <button onClick={onClick} style={{ border: `1px solid ${T.soft}`, borderRadius: 12, padding: "12px 16px", cursor: "pointer", fontWeight: 600, background: "transparent", color: T.text, outline: "none" }}
     onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)} onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}>{children}</button>;
 }
-function AccentButton({ children, onClick, T }: { children: React.ReactNode; onClick?: () => void; T: Theme; }) {
-  return <button onClick={onClick} style={{ border: "none", borderRadius: 12, padding: "12px 16px", cursor: "pointer", fontWeight: 700, background: T.accent, color: "#1b1500", outline: "none" }}
-    onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)} onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}>{children}</button>;
+function AccentButton({
+  children, onClick, T, ...rest
+}: React.PropsWithChildren<{ onClick?: () => void; T: Theme } & React.ButtonHTMLAttributes<HTMLButtonElement>>) {
+  return (
+    <button
+      onClick={onClick}
+      {...rest}
+      style={{
+        border: "none", borderRadius: 12, padding: "12px 16px",
+        cursor: "pointer", fontWeight: 700, background: T.accent, color: "#1b1500", outline: "none"
+      }}
+      onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+      onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+    >
+      {children}
+    </button>
+  );
 }
 
 /* ----------------------- Calm & Prepare (+Timer) ------------------ */
-function PrayerTimer({ T }: { T: Theme }) {
-  const [sec, setSec] = React.useState(60); const [running, setRunning] = React.useState(false);
-  React.useEffect(() => { if (!running || sec <= 0) return; const id = setInterval(() => setSec(s => s - 1), 1000); return () => clearInterval(id); }, [running, sec]);
-  return <div style={{ ...cardStyle(T) }}>
-    <h4 style={{ marginTop: 0 }}>Pray Together</h4>
-    <p style={{ color: T.muted, marginTop: 0 }}>“Lord, make us quick to hear, slow to speak, and bind us in Your love.”</p>
-    <div style={{ fontSize: 28, fontWeight: 700 }}>{sec}s</div>
-    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-      <PrimaryButton T={T} onClick={() => { setRunning(true); if (sec === 0) setSec(60); }}>{running ? "Running…" : "Start 60s"}</PrimaryButton>
-      <GhostButton T={T} onClick={() => { setRunning(false); }}>Pause</GhostButton>
-      <GhostButton T={T} onClick={() => { setRunning(false); setSec(60); }}>Reset</GhostButton>
+// Minimal Timer controls (no title) to embed inside Breathing card
+function BreathingTimer({ T, seconds = 60 }: { T: Theme; seconds?: number }) {
+  const [sec, setSec] = React.useState(seconds);
+  const [running, setRunning] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!running) return;
+    if (sec <= 0) { setRunning(false); return; } // stop cleanly at 0
+    const id = setInterval(() => setSec((s) => s - 1), 1000);
+    return () => clearInterval(id);
+  }, [running, sec]);
+
+  const start = () => {
+    if (sec === 0) setSec(seconds);
+    setRunning(true);
+  };
+  const pause = () => setRunning(false);
+  const reset = () => { setRunning(false); setSec(seconds); };
+
+  return (
+    <div>
+      <div style={{ fontSize: 28, fontWeight: 700 }}>{sec}s</div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <AccentButton T={T} onClick={start}>
+          {running ? "Running…" : `Start ${seconds}s`}
+        </AccentButton>
+        <AccentButton T={T} onClick={pause}>Pause</AccentButton>
+        <AccentButton T={T} onClick={reset}>Reset</AccentButton>
+      </div>
     </div>
-  </div>;
+  );
 }
-function CalmPrepare({ T, compact, topic, onTopicChange }: { T: Theme; compact?: boolean; topic: VerseTopic; onTopicChange: (t: VerseTopic) => void; }) {
+
+// REPLACE your existing CalmPrepare with this version
+function CalmPrepare({
+  T,
+  compact,
+  topic,
+  onTopicChange,
+}: {
+  T: Theme;
+  compact?: boolean;
+  topic: VerseTopic;
+  onTopicChange: (t: VerseTopic) => void;
+}) {
   const dayIndex = Math.floor(Date.now() / 86400000);
   const verse = pickVerse(topic, dayIndex);
-  return <div style={{ display: "grid", gap: 12 }}>
-    {!compact && <p style={{ color: T.muted, marginTop: 0, maxWidth: "70ch" }}>Before you write or respond, practice calm: a brief breath, a short prayer, and a verse.</p>}
-    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-      <div style={{ ...cardStyle(T) }}>
-        <h4 style={{ marginTop: 0 }}>Breathing (60s)</h4>
-        <p style={{ color: T.muted }}>Inhale 4 • Hold 4 • Exhale 6 — repeat 6–8 times. Relax your jaw and shoulders.</p>
-      </div>
-      <PrayerTimer T={T} />
-    </div>
-    <div style={{ ...cardStyle(T) }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <h4 style={{ marginTop: 0 }}>Today’s Scripture</h4>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ color: T.muted, fontSize: 13 }}>Topic:</label>
-          <select aria-label="Scripture topic" value={topic} onChange={(e) => onTopicChange(e.target.value as VerseTopic)}
-            style={{ border: `1px solid ${T.soft}`, background: "transparent", color: T.text, padding: "8px 10px", borderRadius: 10, outline: "none" }}
-            onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)} onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}>
-            {verseTopics.map((t) => <option key={t} value={t} style={{ color: "black" }}>{t[0].toUpperCase() + t.slice(1)}</option>)}
-          </select>
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {!compact && (
+        <p style={{ color: T.muted, marginTop: 0, maxWidth: "70ch" }}>
+          Before you write or respond, practice calm: a brief breath, a short prayer, and a verse.
+        </p>
+      )}
+
+      {/* === Two-column section: Breathing WITH timer (left) + Prayer text (right) === */}
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+        {/* Left: Breathing (with timer inside) */}
+        <div style={{ ...cardStyle(T) }}>
+          <h4 style={{ marginTop: 0 }}>Breathing (60s)</h4>
+          <p style={{ color: T.muted }}>
+            Inhale 4 • Hold 4 • Exhale 6 — repeat 6–8 times. Relax your jaw and shoulders.
+          </p>
+          <div style={{ marginTop: 8 }}>
+            {/* Timer moved here */}
+            <BreathingTimer T={T} seconds={60} />
+          </div>
+        </div>
+
+        {/* Right: Prayer text only (no timer) */}
+        <div style={{ ...cardStyle(T) }}>
+          <h4 style={{ marginTop: 0 }}>Pray Together</h4>
+          <p style={{ color: T.muted, marginTop: 0 }}>
+            “Lord, make us quick to hear, slow to speak, and bind us in Your love.”
+          </p>
         </div>
       </div>
-      <div style={{ color: T.accent, fontWeight: 700 }}>{verse.ref}</div>
-      <div style={{ marginTop: 6, maxWidth: "70ch" }}>{verse.text}</div>
+
+      {/* Scripture card (unchanged, just moved below) */}
+      <div style={{ ...cardStyle(T) }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <h4 style={{ marginTop: 0 }}>Today’s Scripture</h4>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ color: T.muted, fontSize: 13 }}>Topic:</label>
+            <select
+              aria-label="Scripture topic"
+              value={topic}
+              onChange={(e) => onTopicChange(e.target.value as VerseTopic)}
+              style={{
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                padding: "8px 10px",
+                borderRadius: 10,
+                outline: "none",
+              }}
+              onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+              onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+            >
+              {verseTopics.map((t) => (
+                <option key={t} value={t} style={{ color: "black" }}>
+                  {t[0].toUpperCase() + t.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div style={{ color: T.accent, fontWeight: 700 }}>{verse.ref}</div>
+        <div style={{ marginTop: 6, maxWidth: "70ch" }}>{verse.text}</div>
+      </div>
     </div>
-  </div>;
+  );
 }
+
 
 /* ----------------------- TIPS (style-based chips) ----------------- */
 function TipChips({ T, styles, step, role }: { T: Theme; styles?: UserStyles; step: ConflictStep; role: "initiator" | "recipient"; }) {
@@ -553,8 +641,8 @@ function ConflictCard({
           <TipChips T={T} styles={myStyles} step="CALM_PREPARE" role={iAmInitiator ? "initiator" : "recipient"} />
           <CalmPrepare T={T} compact topic={verseTopic} onTopicChange={setVerseTopic} />
           <div style={{ marginTop: 8 }}>
-            <PrimaryButton T={T} onClick={proceedFromCalmPrepare}>Proceed to Schedule</PrimaryButton>
-          </div>
+            <AccentButton T={T} onClick={proceedFromCalmPrepare}>Proceed to Schedule</AccentButton>
+         </div>
         </div>
       )}
 
