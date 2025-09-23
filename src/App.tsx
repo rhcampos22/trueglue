@@ -1183,6 +1183,13 @@ const prayer = React.useMemo(
 
   return (
     <>
+      <Card title="Scripture — Verse of the Day">
+        <div style={{ marginBottom: 10 }}>
+          See Home for your Verse of the Day (topic selectable there).
+        </div>
+        <HabitRow id="scriptureVOTD" title="Read it together" tip="Ask: What stands out? Why?" />
+      </Card>
+
       <Card title="Gratitude">
         <HabitRow
           id="gratitude"
@@ -1293,13 +1300,6 @@ const prayer = React.useMemo(
           open={openWhy}
           onClose={() => setOpenWhy(false)}
         />
-      </Card>
-
-      <Card title="Scripture — Verse of the Day">
-        <div style={{ marginBottom: 10 }}>
-          See Home for your Verse of the Day (topic selectable there).
-        </div>
-        <HabitRow id="scriptureVOTD" title="Read it together" tip="Ask: What stands out? Why?" />
       </Card>
     </>
   );
