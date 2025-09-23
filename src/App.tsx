@@ -126,14 +126,17 @@ type UserProfile = {
 type JournalEntry = {
   id: string;
   isoDateTime: string; // e.g., 2025-09-23T07:45:00-07:00
-  text?: string;       // empty if they checked "Done on paper"
+  encrypted?: { iv: string; blob: string }; // AES-GCM encrypted JSON: { text: string }
   onPaper?: boolean;   // true when they marked done without typing
-  sharedTo?: ("spouse" | "pastor")[]; // optional, per-entry sharing
+  // sharedTo?: ("spouse" | "pastor")[]; // optional future
 };
 
 // NEW — global privacy prefs
 type PrivacyPrefs = {
   allowPastorView: boolean; // master toggle for leader/mentor visibility of anonymized metrics
+  pinEnabled?: boolean;
+  autoLockMinutes?: 5 | 10 | 30 | 60;
+  consentLog?: Array<{ at: number; allow: boolean }>;
 };
 
 type JournalPrefs = {
@@ -157,7 +160,7 @@ export const FEATURES = Object.freeze({
 
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 4;
 
 // === Conflict Styles (NEW) ===
 type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
@@ -183,6 +186,19 @@ export type UserState = {
 
   // NEW — Privacy (optional; default provided in load/migrate)
   privacy?: PrivacyPrefs;
+};
+
+// ===== Defaults for new fields =====
+export const DEFAULT_PRIVACY: PrivacyPrefs = {
+  allowPastorView: false,
+  pinEnabled: false,
+  autoLockMinutes: 10,
+  consentLog: [],
+};
+
+export const DEFAULT_JOURNAL: NonNullable<UserState["journal"]> = {
+  entries: [],
+  prefs: { remindDaily: false, remindTime: "20:30", remindAfterWorkflow: false, historyView: "list" },
 };
 
 function migrate(old: any): UserState | null {
@@ -592,39 +608,44 @@ async function copy(text: string) {
 
 // TODO: Replace base64 with AES-GCM using Web Crypto API when moving off local-only storage.
 
-// --- base64 helpers without deprecated escape/unescape ---
-const te = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
-const td = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
-
-function toBase64(u8: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-  return btoa(bin);
+// ===== Strong crypto (AES-GCM with PIN-derived key) =====
+async function deriveKeyFromPin(pin: string, saltB64: string) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveKey"]);
+  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 210_000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
-function fromBase64(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const u8 = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-  return u8;
+async function encryptJSONWithKey(key: CryptoKey, data: unknown) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(JSON.stringify(data)));
+  return { iv: btoa(String.fromCharCode(...iv)), blob: btoa(String.fromCharCode(...new Uint8Array(cipher))) };
 }
-
-function encodeText(plain: string): string {
-  try {
-    if (te) return toBase64(te.encode(plain));
-    // very old browsers fallback
-    return btoa(unescape(encodeURIComponent(plain)));
-  } catch {
-    return plain;
+async function decryptJSONWithKey<T>(key: CryptoKey, payload: { iv: string; blob: string }): Promise<T> {
+  const iv = Uint8Array.from(atob(payload.iv), c => c.charCodeAt(0));
+  const bytes = Uint8Array.from(atob(payload.blob), c => c.charCodeAt(0));
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, bytes);
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(plain)));
+}
+let SESSION_AES_KEY: CryptoKey | null = null;
+function getOrCreateSaltB64() {
+  const k = "trueglue.v2.salt";
+  let s = localStorage.getItem(k);
+  if (!s) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    s = btoa(String.fromCharCode(...bytes));
+    localStorage.setItem(k, s);
   }
+  return s;
 }
-function decodeText(encoded: string): string {
-  try {
-    if (td) return td.decode(fromBase64(encoded));
-    // very old browsers fallback
-    return decodeURIComponent(escape(atob(encoded)));
-  } catch {
-    return encoded;
-  }
+function isLocked(u: UserState) {
+  return !!u.privacy?.pinEnabled && !SESSION_AES_KEY;
 }
 
 /* -------------------- CONTEXT -------------------- */
@@ -900,6 +921,24 @@ useEffect(() => {
   }),
   [user, toast]   // ✅ include toast
 );
+
+// Auto-lock session AES key after inactivity (only when PIN enabled)
+useEffect(() => {
+  const minutes = user.privacy?.autoLockMinutes ?? 10;
+  if (!user.privacy?.pinEnabled) return;
+  let timer: number | null = null;
+  const reset = () => {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(() => { SESSION_AES_KEY = null; }, minutes * 60 * 1000);
+  };
+  const events = ["mousemove", "keydown", "click", "visibilitychange"];
+  events.forEach((ev) => window.addEventListener(ev, reset));
+  reset();
+  return () => {
+    if (timer) window.clearTimeout(timer);
+    events.forEach((ev) => window.removeEventListener(ev, reset));
+  };
+}, [user.privacy?.pinEnabled, user.privacy?.autoLockMinutes]);
 
   return (
     <>
@@ -1745,29 +1784,83 @@ function Profile() {
       </Card>
 
 {/* NEW: Privacy & Sharing */}
-<Card title="Privacy & Sharing" sub="Control what is visible to pastors/mentors.">
+<Card title="Privacy & Sharing" sub="Control what is visible to pastors/mentors and secure your data with a PIN.">
   <div style={{ display: "grid", gap: 10 }}>
     <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <input
         type="checkbox"
         checked={user.privacy?.allowPastorView ?? false}
-        onChange={(e) =>
+        onChange={(e) => {
+          const allow = e.currentTarget.checked;
           setUser({
             ...user,
-            privacy: { allowPastorView: e.currentTarget.checked },
-          })
-        }
+            privacy: {
+              ...(user.privacy ?? DEFAULT_PRIVACY),
+              allowPastorView: allow,
+              consentLog: [...(user.privacy?.consentLog ?? []), { at: Date.now(), allow }],
+            },
+          });
+        }}
       />
       <span>Allow pastor/mentor to view my anonymized metrics</span>
     </label>
+
+    {user.privacy?.consentLog?.length ? (
+      <div style={{ fontSize: 12, color: T.muted }}>
+        Last change: {new Date(user.privacy!.consentLog!.at(-1)!.at).toLocaleString()}
+      </div>
+    ) : null}
 
     <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
       <div>• Journal entries are private by default and stored locally on this device.</div>
       <div>• Only group-level counts (e.g., habit completions, number of journal entries) are shown.</div>
       <div>• You can turn this off anytime.</div>
     </div>
-  </div>
-</Card>
+
+    <div style={{ borderTop: `1px solid ${T.soft}`, marginTop: 12, paddingTop: 12 }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>App PIN & Auto-lock</div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={!!user.privacy?.pinEnabled}
+          onChange={async (e) => {
+            const enable = e.currentTarget.checked;
+            const next = {
+              ...user,
+              privacy: {
+                ...(user.privacy ?? DEFAULT_PRIVACY),
+                pinEnabled: enable,
+                consentLog: user.privacy?.consentLog ?? [],
+              },
+            };
+            setUser(next);
+            if (enable) {
+              const pin = prompt("Set a 4–6 digit PIN:");
+              if (pin && /^\d{4,6}$/.test(pin)) {
+                const salt = getOrCreateSaltB64();
+                SESSION_AES_KEY = await deriveKeyFromPin(pin, salt);
+                toast("PIN set & session unlocked");
+              } else {
+                toast("Invalid PIN format");
+              }
+            } else {
+              SESSION_AES_KEY = null;
+              toast("PIN disabled");
+            }
+          }}
+        />
+        <span>Enable App PIN (required to view journal text)</span>
+      </label>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 13, color: T.muted, width: 180 }}>Auto-lock after</span>
+        <select
+          value={user.privacy?.autoLockMinutes ?? 10}
+          onChange={(e) =>
+            setUser({
+              ...user,
+              priv
 
       {/* NEW: Journaling reminder controls */}
       <Card title="Journaling Reminders" sub="Customize how and when you’re nudged to journal.">
@@ -2398,9 +2491,17 @@ function JournalHistoryModal({
                   {new Date(e.isoDateTime).toLocaleString()}
                   {e.onPaper ? " • (paper)" : ""}
                 </div>
-                {e.text
-  ? <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{decodeText(e.text)}</div>
-  : <em style={{ color: T.muted }}>No text (paper entry)</em>}
+                {e.onPaper ? (
+  <em style={{ color: T.muted }}>No text (paper entry)</em>
+) : e.encrypted ? (
+  SESSION_AES_KEY ? (
+    <DecryptedText payload={e.encrypted} />
+  ) : (
+    <em style={{ color: T.muted }}>Locked — enter PIN to view</em>
+  )
+) : (
+  <em style={{ color: T.muted }}>No text</em>
+)}
               </div>
             ))}
           </div>
@@ -2454,24 +2555,35 @@ function JournalHabitModal({
   React.useEffect(() => { if (open) setText(""); }, [open]);
   if (!open) return null;
 
-  const saveText = (opts?: { onPaper?: boolean }) => {
-    const u = ensureJournalBucket(user);
-    const entry: JournalEntry = {
-      id: Math.random().toString(36).slice(2),
-      isoDateTime: nowISOWithTZ(),
-      text: opts?.onPaper ? "" : encodeText(text.trim()),
-      onPaper: !!opts?.onPaper,
-    };
-    const next: UserState = {
-      ...u,
-      journal: { ...u.journal!, entries: [entry, ...u.journal!.entries], prefs: u.journal!.prefs },
-    };
-    setUser(next);
-    completeHabit("journal");   // mark the habit
-    onSaved();
-    toast(opts?.onPaper ? "Marked done (paper)" : "Journal saved");
-    onClose();
+  const saveText = async (opts?: { onPaper?: boolean }) => {
+  const u = ensureJournalBucket(user);
+  let encrypted: { iv: string; blob: string } | undefined = undefined;
+  if (!opts?.onPaper) {
+    if (!SESSION_AES_KEY && u.privacy?.pinEnabled) {
+      toast("Unlock with your PIN first");
+      return;
+    }
+    const key = SESSION_AES_KEY
+      ? SESSION_AES_KEY
+      : await deriveKeyFromPin("0000", getOrCreateSaltB64()); // fallback if PIN not enabled yet
+    encrypted = await encryptJSONWithKey(key, { text: text.trim() });
+  }
+  const entry: JournalEntry = {
+    id: Math.random().toString(36).slice(2),
+    isoDateTime: nowISOWithTZ(),
+    encrypted,
+    onPaper: !!opts?.onPaper,
   };
+  const next: UserState = {
+    ...u,
+    journal: { ...u.journal!, entries: [entry, ...u.journal!.entries], prefs: u.journal!.prefs },
+  };
+  setUser(next);
+  completeHabit("journal");   // mark the habit
+  onSaved();
+  toast(opts?.onPaper ? "Marked done (paper)" : "Journal saved");
+  onClose();
+};
 
   return createPortal(
     <div role="dialog" aria-modal="true" style={{
@@ -2552,6 +2664,25 @@ function JournalHabitModal({
     </div>,
     document.body
   );
+}
+
+// Small helper to render decrypted journal text
+function DecryptedText({ payload }: { payload: { iv: string; blob: string } }) {
+  const [txt, setTxt] = React.useState<string>("(decrypting…)");
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const key = SESSION_AES_KEY ?? await deriveKeyFromPin("0000", getOrCreateSaltB64());
+        const obj = await decryptJSONWithKey<{ text: string }>(key, payload);
+        if (alive) setTxt(obj.text);
+      } catch {
+        if (alive) setTxt("(unable to decrypt)");
+      }
+    })();
+    return () => { alive = false; };
+  }, [payload]);
+  return <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{txt}</div>;
 }
 
 /** =================== VotdCommentaryModal (scholarly short notes + marriage application) =================== */
@@ -2731,20 +2862,23 @@ function ChurchPanel() {
 const T = useT();
   const { user } = useApp(); // NEW
 
-// NEW — anonymized counts only (no names, no content)
-const habitDayCount = Object.values(user.completedHabits ?? {}).reduce(
-  (acc, arr) => acc + (arr?.length ?? 0),
-  0
-);
-const journalCount = user.journal?.entries?.length ?? 0;
-
-  if (!FEATURES.churchMode) {
-    return (
-      <Card title="Church features">
-        <em>Disabled. Toggle FEATURES.churchMode to enable.</em>
-      </Card>
-    );
-  }
+// NEW — single source of truth for anonymized metrics
+function computeAnonymizedMetrics(u: UserState) {
+  const habitDayCount = Object.values(u.completedHabits ?? {}).reduce((acc, arr) => acc + (arr?.length ?? 0), 0);
+  const journalCount = u.journal?.entries?.length ?? 0;
+  const journalDaysLast30 = (() => {
+    const set = new Set<string>();
+    const cutoff = Date.now() - 30 * 86400_000;
+    (u.journal?.entries ?? []).forEach(e => {
+      const t = new Date(e.isoDateTime).getTime();
+      if (t >= cutoff) set.add(e.isoDateTime.slice(0,10));
+    });
+    return set.size;
+  })();
+  const conflictsResolved = 0; // placeholder until conflict records are tracked
+  return { habitDayCount, journalCount, journalDaysLast30, conflictsResolved, updatedAt: Date.now() };
+}
+const m = computeAnonymizedMetrics(user);
 
   return (
     <>
@@ -2759,8 +2893,9 @@ const journalCount = user.journal?.entries?.length ?? 0;
 {user.privacy?.allowPastorView && (
   <Card title="Group Metrics (Anonymized)">
     <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-      <li>Total habit completions (count): {habitDayCount}</li>
-      <li>Total journal entries (count only): {journalCount}</li>
+      <li>Total habit completions (count): {m.habitDayCount}</li>
+      <li>Total journal entries (count only): {m.journalCount}</li>
+      <li>Journal days (last 30): {m.journalDaysLast30}</li>
     </ul>
     <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
       These are counts only. No names, emails, or journal text are shared.
