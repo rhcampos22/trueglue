@@ -86,14 +86,15 @@ const navStyle: React.CSSProperties = {
 
 
 /* -------------------- TYPES & DATA MODELS -------------------- */
-export type TGRoute =
-  | "home"
-  | "microhabits"
-  | "lessons"
-  | "profile"
-  | "workflow"
-  | "assessments"
-  | "church";
+ export type TGRoute =
+   | "home"
+   | "microhabits"
+   | "lessons"
+   | "profile"
+   | "workflow"
+   | "assessments"
+   | "church"
+   | "metrics";
 
 /** Single source of truth for topics (prevents duplicate type declarations) */
 export const TOPICS = [
@@ -160,7 +161,7 @@ export const FEATURES = Object.freeze({
 
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
-export const STORAGE_VERSION = 4;
+export const STORAGE_VERSION = 6;
 
 // === Conflict Styles (NEW) ===
 type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
@@ -169,6 +170,9 @@ export type UserState = {
   version: number;
   completedHabits: Partial<Record<MicroHabitId, string[]>>;
   assessmentScores: Partial<Record<"cooperative" | "avoidant" | "competitive", number>>;
+  /** Dates (YYYY-MM-DD) a conflict was marked “resolved”. */
+  conflictResolutions?: string[];
+
   selectedVerseTopic: VerseTopic;
 
   // NEW — results
@@ -206,6 +210,7 @@ function DEFAULT_USER_FROM(old: any, overrides: Partial<UserState> = {}): UserSt
     version: STORAGE_VERSION,
     completedHabits: old.completedHabits ?? {},
     assessmentScores: old.assessmentScores ?? {},
+    conflictResolutions: old.conflictResolutions ?? [],
     selectedVerseTopic: "unity",
     stylePrimary: old.stylePrimary,
     styleSecondary: old.styleSecondary,
@@ -232,6 +237,7 @@ function migrate(old: any): UserState | null {
       version: STORAGE_VERSION,
       completedHabits: old.completedHabits ?? {},
       assessmentScores: old.assessmentScores ?? {},
+      conflictResolutions: old.conflictResolutions ?? [],      
       selectedVerseTopic: old.selectedVerseTopic ?? "unity",
       stylePrimary: old.stylePrimary,
       styleSecondary: old.styleSecondary,
@@ -247,6 +253,7 @@ function migrate(old: any): UserState | null {
       version: STORAGE_VERSION,
       completedHabits: old.completedHabits ?? {},
       assessmentScores: old.assessmentScores ?? {},
+      conflictResolutions: old.conflictResolutions ?? [],      
       selectedVerseTopic: old.selectedVerseTopic ?? "unity",
       stylePrimary: old.stylePrimary,
       styleSecondary: old.styleSecondary,
@@ -280,6 +287,7 @@ export function loadState(): UserState {
   version: STORAGE_VERSION,
   completedHabits: {},
   assessmentScores: {},
+  conflictResolutions: [],  
   selectedVerseTopic: "unity",
   journal: DEFAULT_JOURNAL,         // ← add
   privacy: DEFAULT_PRIVACY,         // existing
@@ -298,6 +306,7 @@ export function saveState(next: UserState) {
           return [k, (dates ?? []).filter((d) => d >= cutoff)];
         })
       ) as UserState["completedHabits"],
+      conflictResolutions: (next.conflictResolutions ?? []).filter((d) => d >= dateAdd(todayISO(), -180)),    
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
   } catch {
@@ -624,6 +633,87 @@ function streak(dates: string[]): number {
   return s;
 }
 
+/** Maximum consecutive-day streak from an array of YYYY-MM-DD dates (unsorted OK). */
+function maxStreak(dates: string[]): number {
+  if (!Array.isArray(dates) || dates.length === 0) return 0;
+  const has = new Set(dates);
+  let best = 0;
+  for (const d of has) {
+    // only start from streak-beginnings
+    const prev = dateAdd(d, -1);
+    if (!has.has(prev)) {
+      let run = 1;
+      let day = dateAdd(d, 1);
+      while (has.has(day)) {
+        run++;
+        day = dateAdd(day, 1);
+      }
+      if (run > best) best = run;
+    }
+  }
+  return best;
+}
+
+function countInLastNDays(dates: string[], n: number): number {
+  if (!dates?.length) return 0;
+  const cutoff = dateAdd(todayISO(), -n + 1); // include today
+  return dates.filter((d) => d >= cutoff).length;
+}
+
+function distinctJournalDays(entries: JournalEntry[], n?: number): number {
+  if (!entries?.length) return 0;
+  const set = new Set<string>();
+  const cutoffTs = n ? Date.now() - n * 86400_000 : null;
+  for (const e of entries) {
+    const ts = new Date(e.isoDateTime).getTime();
+    if (cutoffTs !== null && ts < cutoffTs) continue;
+    set.add(e.isoDateTime.slice(0, 10));
+  }
+  return set.size;
+}
+
+function countsBy(predicate: (e: JournalEntry) => boolean, entries: JournalEntry[]): number {
+  return entries.reduce((acc, e) => acc + (predicate(e) ? 1 : 0), 0);
+}
+
+/** Shared, anonymized rollup you can show in Metrics and Church panels */
+function computeAnonymizedMetrics(u: UserState) {
+  const habits = u.completedHabits ?? {};
+  const habitDayCount = Object.values(habits).reduce((acc, arr) => acc + (arr?.length ?? 0), 0);
+
+  const entries = u.journal?.entries ?? [];
+  const journalCount = entries.length;
+  const journalDaysLast30 = distinctJournalDays(entries, 30);
+  const journalOnPaper = countsBy((e) => !!e.onPaper, entries);
+
+  const conflictDates = u.conflictResolutions ?? [];
+  const conflictsResolvedTotal = conflictDates.length;
+  const conflictsLast30 = countInLastNDays(conflictDates, 30);
+
+  const anyHabitDaysLast30 = distinctDaysWithAnyHabit(u, 30);
+
+  return {
+    habitDayCount,
+    anyHabitDaysLast30,
+    journalCount,
+    journalOnPaper,
+    journalDaysLast30,
+    conflictsResolvedTotal,
+    conflictsLast30,
+    updatedAt: Date.now(),
+  };
+}
+
+/** Unique days in last N with at least one habit completed. */
+function distinctDaysWithAnyHabit(u: UserState, n: number): number {
+  const set = new Set<string>();
+  const cutoff = dateAdd(todayISO(), -n + 1);
+  for (const arr of Object.values(u.completedHabits ?? {})) {
+    (arr ?? []).forEach((d) => { if (d >= cutoff) set.add(d); });
+  }
+  return set.size;
+}
+
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -685,10 +775,13 @@ type AppCtx = {
   // NEW
   setBlockNav(on: boolean): void;
   isNavBlocked(): boolean;
+  /** Append today to conflictResolutions and persist. */
+  logConflictResolved(): void;
 };
 
-const Ctx = createContext<AppCtx | null>(null);
-function useApp() {
+ export const Ctx = createContext<AppCtx | null>(null);
+ 
+ export function useApp() {
   const v = useContext(Ctx);
   if (!v) throw new Error("Ctx missing");
   return v;
@@ -890,6 +983,7 @@ const appStyle: React.CSSProperties = {
   const titles: Record<TGRoute, string> = {
   home: "Home",
   microhabits: "Micro-Habits",
+    metrics: "Metrics",  
   lessons: "Lessons",
   workflow: "Conflict Workflow",
   assessments: "Assessments",
@@ -945,6 +1039,14 @@ useEffect(() => {
     // NEW
     setBlockNav: (on) => { navBlockRef.current = on; },
     isNavBlocked: () => navBlockRef.current,
+    logConflictResolved: () => {
+      const d = todayISO();
+      const list = user.conflictResolutions ?? [];
+      if (!list.includes(d)) {
+        setUser({ ...user, conflictResolutions: [...list, d] });
+        toast("Logged: conflict resolved");
+      }
+    }, 
   }),
   [user, toast]   // ✅ include toast
 );
@@ -1045,6 +1147,7 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
   const itemsBase: ReadonlyArray<TabItem<TGRoute>> = [
     { id: "home",        label: "Home",          panel: <Home /> },
     { id: "microhabits", label: "Micro-Habits",  panel: <MicroHabits /> },
+    { id: "metrics",     label: "Metrics",       panel: <MetricsDashboard /> },    
     { id: "lessons",     label: "Lessons",       panel: <Lessons /> },
     { id: "workflow",    label: "Conflict Flow", panel: <ConflictWorkflow /> },
     { id: "assessments", label: "Assessments",   panel: <Assessments /> },
@@ -2952,27 +3055,147 @@ function VotdCommentaryModal({ open, onClose, verseRef, verseText, topic }: {
   );
 }
 
+/* -------------------- METRICS DASHBOARD -------------------- */
+const HABIT_LABELS: Record<MicroHabitId, string> = {
+  gratitude: "Gratitude",
+  loveMap: "Love Map",
+  scriptureVOTD: "Scripture (VOTD)",
+  prayer: "Prayer",
+  calmBreath: "Calm — Breathe",
+  journal: "Journaling",
+};
+
+function MetricsDashboard() {
+  const T = useT();
+  const { user, logConflictResolved } = useApp();
+
+  const habits = user.completedHabits ?? {};
+  const entries = user.journal?.entries ?? [];
+  const conflictDates = user.conflictResolutions ?? [];
+
+  // Per-habit streaks
+  const perHabit = (Object.keys(HABIT_LABELS) as MicroHabitId[]).map((id) => {
+    const dates = habits[id] ?? [];
+    return {
+      id,
+      name: HABIT_LABELS[id],
+      todayDone: dates.includes(todayISO()),
+      currentStreak: streak(dates),
+      maxStreak: maxStreak(dates),
+      last7: countInLastNDays(dates, 7),
+      last30: countInLastNDays(dates, 30),
+      total: dates.length,
+    };
+  });
+
+  // Journal stats
+  const journalStats = {
+    total: entries.length,
+    onPaper: countsBy((e) => !!e.onPaper, entries),
+    last7Days: distinctJournalDays(entries, 7),
+    last30Days: distinctJournalDays(entries, 30),
+  };
+
+  // Conflict stats
+  const conflictStats = {
+    totalResolved: conflictDates.length,
+    last30: countInLastNDays(conflictDates, 30),
+    lastResolvedOn: conflictDates.length ? conflictDates.slice().sort().at(-1)! : "—",
+  };
+
+  // Anonymized rollup (same thing shown to leaders if enabled)
+  const anon = computeAnonymizedMetrics(user);
+
+  return (
+    <>
+      <Card title="Habit Streaks & Counts" sub="Current vs max streaks, last 7/30 days">
+        <div style={{ display: "grid", gap: 8 }}>
+          {perHabit.map((h) => (
+            <div
+              key={h.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                border: `1px solid ${T.soft}`,
+                borderRadius: 10,
+                padding: 10,
+                background: T.card,
+                color: T.text,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700 }}>{h.name}</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+                  Today: {h.todayDone ? "✓" : "—"} • Streak {h.currentStreak} (max {h.maxStreak}) • 7d {h.last7} • 30d {h.last30} • total {h.total}
+                </div>
+              </div>
+              <div aria-hidden style={{ fontSize: 20 }}>{h.todayDone ? "✅" : "○"}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card title="Journaling" sub="Counts only; text stays encrypted/private">
+        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Total entries: {journalStats.total}</li>
+          <li>On paper: {journalStats.onPaper}</li>
+          <li>Distinct days with entries (last 7): {journalStats.last7Days}</li>
+          <li>Distinct days with entries (last 30): {journalStats.last30Days}</li>
+        </ul>
+      </Card>
+
+      <Card title="Conflict Resolutions" sub="Simple counts by date (YYYY-MM-DD)">
+        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Total resolved: {conflictStats.totalResolved}</li>
+          <li>Resolved in last 30d: {conflictStats.last30}</li>
+          <li>Most recent: {conflictStats.lastResolvedOn}</li>
+        </ul>
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={logConflictResolved}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: `1px solid ${T.primary}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Log “Conflict Resolved” (today)
+          </button>
+        </div>
+      </Card>
+
+      <Card title="Anonymized Aggregate (Preview)" sub="This is what leaders can see if you enable sharing">
+        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Total habit completions: {anon.habitDayCount}</li>
+          <li>Unique active days with any habit (last 30): {anon.anyHabitDaysLast30}</li>
+          <li>Journal entries (count only): {anon.journalCount} (on paper: {anon.journalOnPaper})</li>
+          <li>Days with journal entries (last 30): {anon.journalDaysLast30}</li>
+          <li>Conflicts resolved: {anon.conflictsResolvedTotal} (last 30: {anon.conflictsLast30})</li>
+        </ul>
+        <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+          Timestamp: {new Date(anon.updatedAt).toLocaleString()}
+        </div>
+        {!user.privacy?.allowPastorView && (
+          <div style={{ marginTop: 8, fontSize: 12, color: T.muted }}>
+            Sharing is currently <strong>OFF</strong>. Toggle it in <em>Profile → Privacy &amp; Sharing</em>.
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
 const T = useT();
   const { user } = useApp(); // NEW
 
-// NEW — single source of truth for anonymized metrics
-function computeAnonymizedMetrics(u: UserState) {
-  const habitDayCount = Object.values(u.completedHabits ?? {}).reduce((acc, arr) => acc + (arr?.length ?? 0), 0);
-  const journalCount = u.journal?.entries?.length ?? 0;
-  const journalDaysLast30 = (() => {
-    const set = new Set<string>();
-    const cutoff = Date.now() - 30 * 86400_000;
-    (u.journal?.entries ?? []).forEach(e => {
-      const t = new Date(e.isoDateTime).getTime();
-      if (t >= cutoff) set.add(e.isoDateTime.slice(0,10));
-    });
-    return set.size;
-  })();
-  const conflictsResolved = 0; // placeholder until conflict records are tracked
-  return { habitDayCount, journalCount, journalDaysLast30, conflictsResolved, updatedAt: Date.now() };
-}
 const m = computeAnonymizedMetrics(user);
 
   return (

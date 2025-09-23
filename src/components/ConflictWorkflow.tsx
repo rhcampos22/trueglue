@@ -1,5 +1,6 @@
 import React from "react";
 import { useTheme } from "../theme";
+import { useApp } from "../app"; // access logConflictResolved()
 
 /** ================================================================
  * ConflictWorkflow (extracted old design) – drop-in component
@@ -635,7 +636,10 @@ function ConflictCard({
   c: ConflictSession; me: UserId;
   setConflicts: React.Dispatch<React.SetStateAction<ConflictSession[]>>;
   T: Theme; myStyles?: UserStyles; verseTopic: VerseTopic; setVerseTopic: (t: VerseTopic) => void;
-}) {
+ }) {
+  // App-level metrics API (added in App context)
+  const { logConflictResolved } = useApp();
+
   const iAmInitiator = c.initiator === me;
   const iAmRecipient = c.recipient === me;
 
@@ -727,6 +731,8 @@ function ConflictCard({
     x.hasPromptForInitiator = false;
     x.hasPromptForRecipient = false;
   });
+  // 👇 update app-wide Metrics (conflicts resolved today)
+   logConflictResolved();
 }
 
   const stepOrder: ConflictStep[] = [
