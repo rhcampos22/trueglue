@@ -1,4 +1,5 @@
 import React from "react";
+import { useTheme } from "../theme";
 
 /** ================================================================
  * ConflictWorkflow (extracted old design) – drop-in component
@@ -16,8 +17,12 @@ type ConflictStep =
   | "QUESTIONS_SELFCRITIQUE"
   | "CALM_PREPARE"
   | "SCHEDULE"
+  | "DIALOGUE"              // NEW
   | "DECISION_REPAIR"
   | "RESOLVED";
+type ConflictHeat = "crisis" | "hot" | "tense" | "cool";
+type JourneyStatus = "forward" | "wall" | "upstream" | "reset";
+type AgreementDimension = "personal" | "relational" | "structural" | "cultural";
 type TestimonyVisibility = "private" | "church" | "community";
 
 type ConflictSession = {
@@ -49,10 +54,22 @@ type ConflictSession = {
   step: ConflictStep;
   createdAt: number;
   resolvedAt?: number;
+  heat?: ConflictHeat;
+  journey?: JourneyStatus;
+  reviewAt?: number;               
+  dimensions?: AgreementDimension[]; 
+  topicTags?: string[];            
+  identityA?: string;
+  identityB?: string;
+  bothAnd?: string;
+  dialogue?: {
+    aParaphrase?: string;
+    bParaphrase?: string;
+    completed?: boolean;
+  };
 };
 
 /* ----------------------------- THEME ----------------------------- */
-import { useTheme } from "../theme";
 
 type Theme = {
   bg: string;
@@ -124,12 +141,19 @@ END:VCALENDAR
 
 /* ------------------------ LANGUAGE GUARDS ------------------------- */
 const roughPhrases = [
-  /you always/i, /you never/i, /whatever/i, /shut up/i, /that’s stupid/i, /that's stupid/i, /as usual/i,
-  /everyone knows/i, /obviously/i,
+  /you always/i, /you never/i, /whatever/i, /shut up/i,
+  /that'?s stupid/i, /as usual/i, /everyone knows/i, /obviously/i,
+  /\byou (are|were|must be) so\b/i, /\bwhy can'?t you\b/i
 ];
+
 const needsGentleStart = (text: string) => !!text && roughPhrases.some((r) => r.test(text));
 const gentleTemplate =
   'Try: "I feel ⟨emotion⟩ when ⟨specific event⟩ because ⟨impact⟩. I need ⟨clear ask⟩."';
+
+function suggestGentleRewrite(raw: string) {
+  if (!raw) return "";
+  return `When ___ happened, I felt ___ because I value ___. I’d like ___.`;
+}
 
 /* ---------------------------- SCRIPTURE --------------------------- */
 type Scripture = { ref: string; text: string; topics: string[] };
@@ -362,6 +386,100 @@ function CalmPrepare({
   );
 }
 
+function HeatGauge({ T, value, onChange }: {
+  T: Theme; value: ConflictHeat; onChange: (v: ConflictHeat)=>void;
+}) {
+  const opts: ConflictHeat[] = ["crisis","hot","tense","cool"];
+  return (
+    <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+      {opts.map(h => (
+        <button key={h}
+          aria-pressed={value===h} onClick={()=>onChange(h)}
+          style={{
+            border:`1px solid ${T.soft}`, borderRadius:12, padding:"8px 12px",
+            background: value===h ? T.primary : "transparent",
+            color: value===h ? "#001315" : T.text, cursor:"pointer"
+          }}>
+          {h === "crisis" ? "🧯 Crisis" :
+           h === "hot" ? "😤 Hot" :
+           h === "tense" ? "😐 Tense" : "🙂 Cool"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PauseAgreementCard({ T, onDone }: {
+  T: Theme; onDone: (desc: string) => void;
+}) {
+  const [until, setUntil] = React.useState("");
+  const [rules, setRules] = React.useState('We won’t text except logistics. We’ll reconvene kindly.');
+  return (
+    <div style={{ ...cardStyle(T) }}>
+      <h4 style={{ marginTop:0 }}>Pause Agreement</h4>
+      <p style={{ color:T.muted, marginTop:0 }}>
+        If emotions are spiking, agree to pause and return at a set time.
+      </p>
+      <FieldRaw label="Return time/date" T={T}>
+        <input type="datetime-local" value={until}
+               onChange={(e)=>setUntil(e.target.value)} style={inputStyle(T)} />
+      </FieldRaw>
+      <Field label="Ground rules" value={rules} onChange={setRules} T={T} textarea />
+      <div style={{ display:"flex", gap:8 }}>
+        <GhostButton T={T} onClick={()=>{
+          const desc = `Pause until ${until || "TBD"} • ${rules}`;
+          onDone(desc);
+        }}>Create Pause</GhostButton>
+      </div>
+    </div>
+  );
+}
+
+function DialogueScaffold({ T, c, update, onComplete }: {
+  T: Theme; c: ConflictSession;
+  update: (mutator: (x: ConflictSession)=>void) => void;
+  onComplete: () => void;
+}) {
+  const [aPara, setAPara] = React.useState(c.dialogue?.aParaphrase ?? "");
+  const [bPara, setBPara] = React.useState(c.dialogue?.bParaphrase ?? "");
+  const canFinish = aPara.trim().length>0 && bPara.trim().length>0;
+
+  return (
+    <div style={{ ...cardStyle(T) }}>
+      <h3 style={{ marginTop:0 }}>Step 6 – Dialogue (paraphrase & parity)</h3>
+      <p style={{ color:T.muted, marginTop:0 }}>
+        Take turns. A speaks for 2 minutes; B paraphrases. Then swap.
+      </p>
+      <div style={{ display:"grid", gap:12, gridTemplateColumns:"1fr 1fr" }}>
+        <div>
+          <h4 style={{ marginTop:0 }}>A speaks (2:00)</h4>
+          <BreathingTimer T={T} seconds={120} />
+          <Field label="B’s paraphrase of A (required)" value={bPara} onChange={(v)=>{
+            setBPara(v);
+            update(x => x.dialogue = { ...(x.dialogue||{}), bParaphrase: v });
+          }} T={T} textarea />
+        </div>
+        <div>
+          <h4 style={{ marginTop:0 }}>B speaks (2:00)</h4>
+          <BreathingTimer T={T} seconds={120} />
+          <Field label="A’s paraphrase of B (required)" value={aPara} onChange={(v)=>{
+            setAPara(v);
+            update(x => x.dialogue = { ...(x.dialogue||{}), aParaphrase: v });
+          }} T={T} textarea />
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <PrimaryButton T={T} disabled={!canFinish} onClick={()=>{
+          update(x => x.dialogue = { ...(x.dialogue||{}), completed: true });
+          onComplete();
+        }}>Proceed to Decision & Repair</PrimaryButton>
+        <GhostButton T={T} onClick={()=>alert("Paraphrase tip: summarize impact/need without rebuttal.")}>
+          Paraphrase tip
+        </GhostButton>
+      </div>
+    </div>
+  );
+}
 
 /* ----------------------- TIPS (style-based chips) ----------------- */
 function TipChips({ T, styles, step, role }: { T: Theme; styles?: UserStyles; step: ConflictStep; role: "initiator" | "recipient"; }) {
@@ -376,6 +494,7 @@ function TipChips({ T, styles, step, role }: { T: Theme; styles?: UserStyles; st
 }
 
 /* ----------------------- CORE: CONFLICTS VIEW --------------------- */
+
 function ConflictsView({
   T, activeUser, conflicts, setConflicts, myOpen, myResolved, userStyles, verseTopic, setVerseTopic,
 }: {
@@ -390,28 +509,55 @@ function ConflictsView({
   setVerseTopic: (t: VerseTopic) => void;
 }) {
   const [showCalm, setShowCalm] = React.useState(false);
+  const [heat, setHeat] = React.useState<ConflictHeat>("tense");
+  const startNew = () => { setHeat("tense"); setShowCalm(true); };
+const followups = conflicts
+  .filter(c => c.step === "RESOLVED" && typeof c.reviewAt === "number" && Date.now() >= (c.reviewAt || 0));
 
-  const startNew = () => setShowCalm(true);
-  const actuallyCreate = () => {
-    const recipient: UserId = activeUser === "A" ? "B" : "A";
-    const c: ConflictSession = {
-      id: uid(), initiator: activeUser, recipient,
-      step: "QUALIFY", createdAt: Date.now(),
-      calmShownToInitiator: true, hasPromptForRecipient: true, rescheduleCount: 0,
-    };
-    setConflicts(arr => [c, ...arr]); setShowCalm(false);
+const actuallyCreate = () => {
+  const recipient: UserId = activeUser === "A" ? "B" : "A";
+  const c: ConflictSession = {
+    id: uid(), initiator: activeUser, recipient,
+    step: "QUALIFY", createdAt: Date.now(),
+    calmShownToInitiator: true, hasPromptForRecipient: true, rescheduleCount: 0,
+    heat, journey: "forward",
   };
+  setConflicts(arr => [c, ...arr]);
+  setShowCalm(false);
+};
 
-  return <div style={{ display: "grid", gap: 16 }}>
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
     {showCalm && (
-      <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare" T={T}>
-        <CalmPrepare T={T} topic={verseTopic} onTopicChange={setVerseTopic} />
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <PrimaryButton T={T} onClick={actuallyCreate}>I’m ready to begin</PrimaryButton>
-          <GhostButton T={T} onClick={() => setShowCalm(false)}>Cancel</GhostButton>
-        </div>
-      </Modal>
-    )}
+  <Modal onClose={() => setShowCalm(false)} title="Prepare to Start" T={T}>
+    <div style={{ display:"grid", gap:12 }}>
+      <FieldRaw label="How hot is it right now?" T={T}>
+        <HeatGauge T={T} value={heat} onChange={setHeat} />
+      </FieldRaw>
+
+      {heat === "crisis" ? (
+        <PauseAgreementCard T={T} onDone={(desc)=>{
+          // Try to parse a date/time from the description for the .ics
+          const matchDate = desc.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+          const matchTime = desc.match(/\d{2}:\d{2}/)?.[0];
+          downloadICS({ title:"TrueGlue: Pause Agreement", description: desc, dateISO: matchDate, timeHHMM: matchTime });
+          alert("Pause agreement created. Come back when you’re ready.");
+          setShowCalm(false);
+        }} />
+      ) : (
+        <>
+          <CalmPrepare T={T} topic={verseTopic} onTopicChange={setVerseTopic} />
+          <div style={{ display:"flex", gap:8 }}>
+            <PrimaryButton T={T} onClick={actuallyCreate}>
+              {heat === "cool" ? "Start" : "I’m calm—start"}
+            </PrimaryButton>
+            <GhostButton T={T} onClick={()=>setShowCalm(false)}>Cancel</GhostButton>
+          </div>
+        </>
+      )}
+    </div>
+  </Modal>
+)}
 
     <div style={cardStyle(T)}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
@@ -426,33 +572,61 @@ function ConflictsView({
     </div>
 
     {myOpen.length > 0 && (
-      <section style={{ ...cardStyle(T), borderColor: T.primary }}>
-        <h3 style={{ marginTop: 0 }}>Open</h3>
-        <div style={{ display: "grid", gap: 12 }}>
-          {myOpen.map(c => (
-            <ConflictCard
-              key={c.id}
-              c={c}
-              me={activeUser}
-              setConflicts={setConflicts}
-              T={T}
-              myStyles={userStyles[activeUser]}
-              verseTopic={verseTopic}
-              setVerseTopic={setVerseTopic}
-            />
-          ))}
-        </div>
-      </section>
-    )}
+  <section style={{ ...cardStyle(T), borderColor: T.primary }}>
+    <h3 style={{ marginTop: 0 }}>Open</h3>
+    <div style={{ display: "grid", gap: 12 }}>
+      {myOpen.map(c => (
+        <ConflictCard
+          key={c.id}
+          c={c}
+          me={activeUser}
+          setConflicts={setConflicts}
+          T={T}
+          myStyles={userStyles[activeUser]}
+          verseTopic={verseTopic}
+          setVerseTopic={setVerseTopic}
+        />
+      ))}
+    </div>
+  </section>
+)}
 
-    <section style={cardStyle(T)}>
-      <h3 style={{ marginTop: 0 }}>Previous Conflicts (view-only)</h3>
-      {myResolved.length === 0 && <p style={{ color: T.muted, marginBottom: 0 }}>No resolved sessions yet.</p>}
-      <div style={{ display: "grid", gap: 12 }}>
-        {myResolved.map(c => <ResolvedCard key={c.id} c={c} me={activeUser} T={T} />)}
-      </div>
-    </section>
-  </div>;
+{followups.length > 0 && (
+  <section style={{ ...cardStyle(T), borderColor: T.accent }}>
+    <h3 style={{ marginTop: 0 }}>Follow-ups due</h3>
+    <ul style={{ marginTop: 6 }}>
+      {followups.map(c => (
+        <li key={c.id}>
+          Session #{c.id.slice(0,6)} • review scheduled {fmtDateTime(c.reviewAt!)}{" "}
+          <GhostButton T={T} onClick={() => alert("Guide: Ask ‘Did our agreement help? Keep, Tweak, or Drop?’")}>
+            Open review guide
+          </GhostButton>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+<section style={cardStyle(T)}>
+  <h3 style={{ marginTop: 0 }}>Previous Conflicts (view-only)</h3>
+  {myResolved.length === 0 && (
+    <p style={{ color: T.muted, marginBottom: 0 }}>No resolved sessions yet.</p>
+  )}
+  <div style={{ display: "grid", gap: 12 }}>
+    {myResolved.map(c => (
+  <ResolvedCard
+    key={c.id}
+    c={c}
+    me={activeUser}
+    T={T}
+    collapsible
+  />
+))}
+  </div>
+</section>
+
+</div>
+);
 }
 
 function ConflictCard({
@@ -477,6 +651,14 @@ function ConflictCard({
   const [apologies, setApologies] = React.useState(c.apologiesForgiveness ?? "");
   const [followUp, setFollowUp] = React.useState(c.followUpPlan ?? "");
   const [showCalm, setShowCalm] = React.useState(false);
+  const [dims, setDims] = React.useState<AgreementDimension[]>(c.dimensions ?? []);
+  const [fair, setFair] = React.useState(false);
+  const toggleDim = (k: AgreementDimension) =>
+  setDims(d => d.includes(k) ? d.filter(x=>x!==k) : [...d, k]);
+
+  const [myIdentity, setMyIdentity] = React.useState(
+  me === "A" ? (c.identityA ?? "") : (c.identityB ?? "")
+);
 
   React.useEffect(() => {
     if (iAmRecipient && !c.calmShownToRecipient) {
@@ -496,10 +678,23 @@ function ConflictCard({
   function advanceFromQualify() { if (!canAdvanceFromQualify()) return; update(x => { x.step = "RECIPIENT_REVIEW"; x.hasPromptForInitiator = true; }); }
   function canCompleteReview() { return !!c.issueSentence && !!c.issueDetails && !!reviewSummary.trim(); }
   function completeReview() { if (!canCompleteReview()) return; update(x => { x.recipientReviewSummary = reviewSummary.trim(); x.step = "QUESTIONS_SELFCRITIQUE"; }); }
-  function completeQuestionsSelf() { update(x => { x.nonhostileQuestions = nonhostile.trim(); x.selfCritique = selfCrit.trim(); x.step = "CALM_PREPARE"; }); }
+  function completeQuestionsSelf() {
+  update(x => {
+    x.nonhostileQuestions = nonhostile.trim();
+    x.selfCritique = selfCrit.trim();
+    if (me === "A") x.identityA = myIdentity.trim(); else x.identityB = myIdentity.trim();
+    if ((x.identityA?.length ?? 0) > 0 && (x.identityB?.length ?? 0) > 0) {
+      x.bothAnd = `How can we protect A’s “${x.identityA}” and B’s “${x.identityB}” at the same time?`;
+    }
+    x.step = "CALM_PREPARE";
+  });
+}
   function proceedFromCalmPrepare() { update(x => { x.step = "SCHEDULE"; }); }
   function proposeTime() { if (!iAmInitiator) return; if (!date && !time && !desc.trim()) return; update(x => { x.proposedDate = date || ""; x.proposedTime = time || ""; x.proposedDescriptor = desc.trim(); }); }
-  function recipientConfirmTime() { if (!iAmRecipient) return; update(x => { x.confirmedDateTimeByRecipient = true; x.step = "DECISION_REPAIR"; }); }
+  function recipientConfirmTime() {
+  if (!iAmRecipient) return;
+  update(x => { x.confirmedDateTimeByRecipient = true; x.step = "DIALOGUE"; });
+}
   function requestReschedule() {
     if ((c.rescheduleCount ?? 0) >= 1) return;
     update(x => { x.confirmedDateTimeByRecipient = false; x.step = "SCHEDULE"; x.rescheduleCount = (x.rescheduleCount ?? 0) + 1; x.hasPromptForInitiator = true; });
@@ -519,15 +714,25 @@ function ConflictCard({
     ].join("\n");
   }
   function completeDecisionRepair() {
-    const recap = makeRecap();
-    update(x => {
-      x.decisionsAgreements = decisions.trim(); x.apologiesForgiveness = apologies.trim();
-      x.followUpPlan = followUp.trim(); x.recap = recap; x.step = "RESOLVED";
-      x.resolvedAt = Date.now(); x.hasPromptForInitiator = false; x.hasPromptForRecipient = false;
-    });
-  }
+  const recap = makeRecap();
+  update(x => {
+    x.dimensions = dims;
+    x.decisionsAgreements = decisions.trim();
+    x.apologiesForgiveness = apologies.trim();
+    x.followUpPlan = followUp.trim();
+    x.recap = recap;
+    x.step = "RESOLVED";
+    x.resolvedAt = Date.now();
+    x.reviewAt = Date.now() + 7*24*60*60*1000; // +7 days
+    x.hasPromptForInitiator = false;
+    x.hasPromptForRecipient = false;
+  });
+}
 
-  const stepOrder: ConflictStep[] = ["QUALIFY","RECIPIENT_REVIEW","QUESTIONS_SELFCRITIQUE","CALM_PREPARE","SCHEDULE","DECISION_REPAIR","RESOLVED"];
+  const stepOrder: ConflictStep[] = [
+  "QUALIFY","RECIPIENT_REVIEW","QUESTIONS_SELFCRITIQUE",
+  "CALM_PREPARE","SCHEDULE","DIALOGUE","DECISION_REPAIR","RESOLVED"
+];
   const currentIndex = stepOrder.indexOf(c.step);
   const schedulePreview = (date || time || desc) ? `Proposed: ${[date, time, desc].filter(Boolean).join(" • ")}` : "";
 
@@ -544,12 +749,17 @@ function ConflictCard({
     {iAmInitiator && c.hasPromptForInitiator && <Banner T={T} color={T.accent}>Your partner responded. Continue when ready.</Banner>}
 
     <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap" }} aria-label="Progress">
-      {stepOrder.map((s, i) => (
-        <Pill key={s} T={T} color={i <= currentIndex ? (i === currentIndex ? T.primary : T.soft) : T.soft}>
+  {stepOrder.map((s, i) => {
+    const active = i === currentIndex;
+    return (
+      <span key={s} aria-current={active ? "step" : undefined}>
+        <Pill T={T} color={i <= currentIndex ? (active ? T.primary : T.soft) : T.soft}>
           {i+1}. {labelForStep(s)}
         </Pill>
-      ))}
-    </div>
+      </span>
+    );
+  })}
+</div>
 
     {showCalm && (
       <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare" T={T}>
@@ -564,13 +774,18 @@ function ConflictCard({
       {/* STEP 1 */}
       {c.step === "QUALIFY" && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 1 – Qualification (single-sentence focus)</h3>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Qualification (single-sentence focus)</h3>
           <ScriptureInline refText="James 1:19–20" T={T} />
           <SafetyBanner T={T} />
           <TipChips T={T} styles={myStyles} step="QUALIFY" role={iAmInitiator ? "initiator" : "recipient"} />
           {(needsGentleStart(details) || needsGentleStart(sentence)) && (
-            <Banner T={T} color={T.accent}>Gentle start tip: {gentleTemplate}</Banner>
-          )}
+  <Banner T={T} color={T.accent}>
+    Gentle start tip: {gentleTemplate}
+    <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+      Try rewriting: {suggestGentleRewrite(sentence || details)}
+    </div>
+  </Banner>
+)}
 
           <fieldset style={{ border: "none", padding: 0, margin: 0 }} disabled={!iAmInitiator}>
             <Field label="One-sentence issue" value={sentence} onChange={setSentence} T={T}
@@ -599,7 +814,7 @@ function ConflictCard({
 
           {canAdvanceFromQualify() && (
             <div style={{ marginTop: 16 }}>
-              <GhostButton T={T} onClick={advanceFromQualify}>Continue to Step 3 (Recipient reviews partner’s view)</GhostButton>
+              <GhostButton T={T} onClick={advanceFromQualify}>Continue</GhostButton>
             </div>
           )}
         </div>
@@ -608,7 +823,7 @@ function ConflictCard({
       {/* STEP 3 – recipient only */}
       {c.step === "RECIPIENT_REVIEW" && iAmRecipient && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 3 – Review Partner’s View (recipient only)</h3>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Review Partner’s View (recipient only)</h3>
           <ScriptureInline refText="Philippians 2:4" T={T} />
           <TipChips T={T} styles={myStyles} step="RECIPIENT_REVIEW" role="recipient" />
           <ReadBox title="Partner’s one-sentence issue" value={c.issueSentence || ""} T={T} />
@@ -622,21 +837,34 @@ function ConflictCard({
       {/* STEP 4 */}
       {c.step === "QUESTIONS_SELFCRITIQUE" && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 4 – Nonhostile Questions & Self-Critique</h3>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Nonhostile Questions & Self-Critique</h3>
           <TipChips T={T} styles={myStyles} step="QUESTIONS_SELFCRITIQUE" role={iAmInitiator ? "initiator" : "recipient"} />
           {(needsGentleStart(nonhostile) || needsGentleStart(selfCrit)) && (
-            <Banner T={T} color={T.accent}>Gentle language tip: {gentleTemplate}</Banner>
-          )}
+  <Banner T={T} color={T.accent}>
+    Gentle language tip: {gentleTemplate}
+    <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+      Try rewriting: {suggestGentleRewrite(nonhostile || selfCrit)}
+    </div>
+  </Banner>
+)}
           <Field label="Nonhostile questions" value={nonhostile} onChange={setNonhostile} T={T} textarea />
           <Field label="Self-critique" value={selfCrit} onChange={setSelfCrit} T={T} textarea />
-          <PrimaryButton T={T} onClick={completeQuestionsSelf}>Continue to Calm & Prepare</PrimaryButton>
+          <Field
+  label="What are you protecting? (1 short line)"
+  value={myIdentity}
+  onChange={setMyIdentity}
+  T={T}
+  placeholder='e.g., "being a good steward" or "feeling considered"'
+/>
+{c.bothAnd && <Banner T={T} color={T.accent}>Both/And: {c.bothAnd}</Banner>}
+        <PrimaryButton T={T} onClick={completeQuestionsSelf}>Continue to Calm & Prepare</PrimaryButton>
         </div>
       )}
 
       {/* STEP 5 */}
       {c.step === "CALM_PREPARE" && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 5 – Calm & Prepare</h3>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Calm & Prepare</h3>
           <ScriptureInline refText="1 Peter 4:8" T={T} />
           <TipChips T={T} styles={myStyles} step="CALM_PREPARE" role={iAmInitiator ? "initiator" : "recipient"} />
           <CalmPrepare T={T} compact topic={verseTopic} onTopicChange={setVerseTopic} />
@@ -647,34 +875,69 @@ function ConflictCard({
       )}
 
       {/* STEP 6 */}
-      {c.step === "SCHEDULE" && (
+            {c.step === "SCHEDULE" && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 6 – Schedule</h3>
-          <p style={{ color: T.muted, maxWidth: "70ch" }}>Initiator proposes; recipient confirms. Add a descriptor like “after dinner”.</p>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Schedule</h3>
+          <p style={{ color: T.muted, maxWidth: "70ch" }}>
+            Initiator proposes; recipient confirms. Add a descriptor like “after dinner”.
+          </p>
           <TipChips T={T} styles={myStyles} step="SCHEDULE" role={iAmInitiator ? "initiator" : "recipient"} />
           <fieldset style={{ border: "none", padding: 0 }} disabled={!iAmInitiator}>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-              <FieldRaw label="Date" T={T}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(T)} aria-label="Proposed date" /></FieldRaw>
-              <FieldRaw label="Time" T={T}><input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle(T)} aria-label="Proposed time" /></FieldRaw>
+              <FieldRaw label="Date" T={T}>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  style={inputStyle(T)}
+                  aria-label="Proposed date"
+                />
+              </FieldRaw>
+              <FieldRaw label="Time" T={T}>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  style={inputStyle(T)}
+                  aria-label="Proposed time"
+                />
+              </FieldRaw>
             </div>
             <FieldRaw label='Descriptor (optional, e.g., "after dinner")' T={T}>
-              <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder='e.g., "after kids are in bed"' style={inputStyle(T)} aria-label="Proposed descriptor" />
+              <input
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder='e.g., "after kids are in bed"'
+                style={inputStyle(T)}
+                aria-label="Proposed descriptor"
+              />
             </FieldRaw>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <PrimaryButton T={T} onClick={proposeTime}>Save Proposed Time</PrimaryButton>
               {(date || time || desc) && (
-                <GhostButton T={T} onClick={() => downloadICS({
-                  title: "TrueGlue: Conflict Discussion (proposed)",
-                  description: `Issue: ${c.issueSentence || ""}\\nDetails: ${c.issueDetails || ""}`,
-                  dateISO: date, timeHHMM: time
-                })}>Download .ics (proposed)</GhostButton>
+                <GhostButton
+                  T={T}
+                  onClick={() =>
+                    downloadICS({
+                      title: "TrueGlue: Conflict Discussion (proposed)",
+                      description: `Issue: ${c.issueSentence || ""}\\nDetails: ${c.issueDetails || ""}`,
+                      dateISO: date,
+                      timeHHMM: time,
+                    })
+                  }
+                >
+                  Download .ics (proposed)
+                </GhostButton>
               )}
             </div>
           </fieldset>
 
-          {schedulePreview && <div style={{ ...cardStyle(T), marginTop: 12 }}>
-            <h4 style={{ marginTop: 0 }}>Proposed</h4><div>{schedulePreview}</div>
-          </div>}
+          {schedulePreview && (
+            <div style={{ ...cardStyle(T), marginTop: 12 }}>
+              <h4 style={{ marginTop: 0 }}>Proposed</h4>
+              <div>{schedulePreview}</div>
+            </div>
+          )}
 
           {iAmRecipient && (c.proposedDate || c.proposedTime || c.proposedDescriptor) && !c.confirmedDateTimeByRecipient && (
             <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -685,26 +948,55 @@ function ConflictCard({
 
           {c.confirmedDateTimeByRecipient && (
             <div style={{ color: T.success, marginTop: 8 }}>
-              ✓ Recipient confirmed. Proceed to Decision & Repair.
+              ✓ Recipient confirmed. Proceed to Dialogue.
               <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <GhostButton T={T} onClick={downloadIcsNow}>Download .ics (confirmed)</GhostButton>
-                {(c.rescheduleCount ?? 0) < 1 && <GhostButton T={T} onClick={requestReschedule}>Request one reschedule</GhostButton>}
+                {(c.rescheduleCount ?? 0) < 1 && (
+                  <GhostButton T={T} onClick={requestReschedule}>Request one reschedule</GhostButton>
+                )}
               </div>
             </div>
           )}
         </div>
       )}
 
+{/* === NEW STEP: Dialogue === */}
+{c.step === "DIALOGUE" && (
+  <DialogueScaffold
+    T={T}
+    c={c}
+    update={update}
+    onComplete={() => update(x => { x.step = "DECISION_REPAIR"; })}
+  />
+)}
+
       {/* STEP 7 */}
       {c.step === "DECISION_REPAIR" && (
         <div style={{ ...cardStyle(T) }}>
-          <h3 style={{ marginTop: 0 }}>Step 7 – Decision & Repair</h3>
+          <h3 style={{ marginTop: 0 }}>Step {currentIndex + 1} – Decision & Repair</h3>
           <ScriptureInline refText="Colossians 3:13" T={T} />
           <TipChips T={T} styles={myStyles} step="DECISION_REPAIR" role={iAmInitiator ? "initiator" : "recipient"} />
+          <FieldRaw label="What kind of change is this?" T={T}>
+  {(["personal","relational","structural","cultural"] as AgreementDimension[]).map(k=>(
+    <label key={k} style={{ marginRight:12 }}>
+      <input type="checkbox" checked={dims.includes(k)} onChange={()=>toggleDim(k)} />{" "}{k}
+    </label>
+  ))}
+</FieldRaw>
           <Field label="Agreements / Decisions" value={decisions} onChange={setDecisions} T={T} textarea />
-          <Field label="Apologies & Forgiveness" value={apologies} onChange={setApologies} T={T} textarea />
-          <Field label="Follow-up Plan" value={followUp} onChange={setFollowUp} T={T} textarea />
-          <AccentButton T={T} onClick={completeDecisionRepair}>Mark as Resolved</AccentButton>
+<Field label="Apologies & Forgiveness" value={apologies} onChange={setApologies} T={T} textarea />
+<Field label="Follow-up Plan" value={followUp} onChange={setFollowUp} T={T} textarea />
+
+<div style={{ margin:"6px 0" }}>
+  <label>
+    <input type="checkbox" checked={fair} onChange={(e)=>setFair(e.target.checked)} />
+    {" "}I confirm both voices were heard and costs feel balanced.
+  </label>
+</div>
+
+<AccentButton T={T} onClick={completeDecisionRepair} disabled={!fair || !decisions.trim()}>
+  Mark as Resolved
+</AccentButton>
         </div>
       )}
 
@@ -719,12 +1011,83 @@ function ConflictCard({
   </div>;
 }
 
-function ResolvedCard({ c, me, T, editableTestimony, onChange }: {
-  c: ConflictSession; me: UserId; T: Theme; editableTestimony?: boolean; onChange?: (mut: (x: ConflictSession) => void) => void;
+function useAutoHeight(open: boolean) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [height, setHeight] = React.useState<number>(0);
+  const [isAnimating, setIsAnimating] = React.useState(false);
+
+  // Measure when content or open state changes
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    // If opening: set to exact scrollHeight, then after transition ends, let it be 'auto'
+    if (open) {
+      const full = el.scrollHeight;
+      setHeight(full);
+      setIsAnimating(true);
+    } else {
+      // If closing: set to current height first (if we were auto), then to 0 in next tick
+      const current = el.getBoundingClientRect().height || el.scrollHeight;
+      setHeight(current);
+      // allow layout to apply current height before collapsing to 0
+      requestAnimationFrame(() => {
+        setHeight(0);
+        setIsAnimating(true);
+      });
+    }
+  }, [open]);
+
+  // If content size changes while open, keep height in sync
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const el = ref.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const full = el.scrollHeight;
+      setHeight(full);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  const onTransitionEnd = () => {
+    setIsAnimating(false);
+    // When open finishes animating, let the container naturally size (height: auto)
+    if (open) setHeight(-1); // sentinel meaning "auto"
+  };
+
+  // Compute style for the animated wrapper
+  const style: React.CSSProperties = {
+    overflow: "hidden",
+    // we animate both height and opacity/transform for a nicer feel
+    height: height < 0 ? "auto" : `${height}px`,
+    opacity: open ? 1 : 0,
+    transform: open ? "translateY(0)" : "translateY(-4px)",
+    transition: isAnimating
+      ? "height 280ms ease, opacity 220ms ease, transform 220ms ease"
+      : "opacity 0ms linear, transform 0ms linear",
+  };
+
+  return { ref, style, onTransitionEnd };
+}
+
+function ResolvedCard({
+  c, me, T, editableTestimony, onChange, collapsible = true,
+}: {
+  c: ConflictSession
+  me: UserId
+  T: Theme
+  editableTestimony?: boolean
+  onChange?: (mut: (x: ConflictSession) => void) => void
+  /** if true, shows a header row with a toggle and hides details until opened */
+  collapsible?: boolean
 }) {
+  const [open, setOpen] = React.useState(!collapsible);
   const [testimony, setTestimony] = React.useState(c.testimonyText ?? "");
   const [vis, setVis] = React.useState<TestimonyVisibility>(c.testimonyVisibility ?? "private");
-
+  const { ref: detailsRef, style: detailsStyle, onTransitionEnd } = useAutoHeight(open);
   const copyRecap = async () => {
     const text = c.recap ?? [
       `Issue: ${c.issueSentence ?? ""}`, `Details: ${c.issueDetails ?? ""}`,
@@ -739,74 +1102,138 @@ function ResolvedCard({ c, me, T, editableTestimony, onChange }: {
   const scheduled = c.confirmedDateTimeByRecipient ? `${c.proposedDate || ""} ${c.proposedTime || ""} ${c.proposedDescriptor || ""}`.trim() : "—";
   const canSaveTestimony = editableTestimony && testimony.trim().length > 0;
 
-  return <div style={cardStyle(T)}>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <Pill T={T}>Initiator {c.initiator}</Pill>
-      <Pill T={T}>Recipient {c.recipient}</Pill>
-      <Pill T={T}>Created {fmtDateTime(c.createdAt)}</Pill>
-      {c.resolvedAt && <Pill T={T}>Resolved {fmtDateTime(c.resolvedAt)}</Pill>}
-    </div>
-    <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-      <ReadBox title="Issue" value={c.issueSentence || ""} T={T} />
-      <ReadBox title="Details" value={c.issueDetails || ""} T={T} />
-      <ReadBox title="Recipient Summary" value={c.recipientReviewSummary || ""} T={T} />
-      <ReadBox title="Nonhostile Questions" value={c.nonhostileQuestions || ""} T={T} />
-      <ReadBox title="Self-Critique" value={c.selfCritique || ""} T={T} />
-      <ReadBox title="Scheduled" value={scheduled} T={T} />
-      <ReadBox title="Agreements / Decisions" value={c.decisionsAgreements || ""} T={T} />
-      <ReadBox title="Apologies & Forgiveness" value={c.apologiesForgiveness || ""} T={T} />
-      <ReadBox title="Follow-up Plan" value={c.followUpPlan || ""} T={T} />
-      {c.recap && <ReadBox title="Recap" value={c.recap} T={T} />}
-    </div>
+      return (
+    <div style={cardStyle(T)}>
+      {/* HEADER (always visible) */}
+      <div
+        role={collapsible ? "button" : undefined}
+        tabIndex={collapsible ? 0 : -1}
+        aria-expanded={collapsible ? open : undefined}
+        onClick={collapsible ? () => setOpen(o => !o) : undefined}
+        onKeyDown={collapsible ? (e) => ((e.key === "Enter" || e.key === " ") && setOpen(o => !o)) : undefined}
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          cursor: collapsible ? "pointer" : "default",
+        }}
+      >
+        <Pill T={T}>Initiator {c.initiator}</Pill>
+        <Pill T={T}>Recipient {c.recipient}</Pill>
+        <Pill T={T}>Created {fmtDateTime(c.createdAt)}</Pill>
+        {c.resolvedAt && <Pill T={T}>Resolved {fmtDateTime(c.resolvedAt)}</Pill>}
 
-    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-      <GhostButton T={T} onClick={copyRecap}>Copy Recap</GhostButton>
-      {(c.proposedDate || c.proposedTime || c.proposedDescriptor) && (
-        <GhostButton T={T} onClick={() => downloadICS({
-          title: "TrueGlue: Conflict Discussion",
-          description: `Issue: ${c.issueSentence || ""}\\nDetails: ${c.issueDetails || ""}`,
-          dateISO: c.proposedDate, timeHHMM: c.proposedTime
-        })}>Download .ics</GhostButton>
+        {collapsible && (
+          <span style={{ marginLeft: "auto" }}>
+            <GhostButton
+              T={T}
+              onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+            >
+              {open ? "Hide details ▲" : "View details ▼"}
+            </GhostButton>
+          </span>
+        )}
+      </div>
+
+      {(!collapsible || open) && (
+        <div
+          ref={detailsRef}
+          style={detailsStyle}
+          onTransitionEnd={onTransitionEnd}
+          aria-hidden={collapsible ? !open : undefined}
+        >
+          <div style={{ display: "grid", gap: 8, paddingTop: 10 }}>
+            <ReadBox title="Issue" value={c.issueSentence || ""} T={T} />
+            <ReadBox title="Details" value={c.issueDetails || ""} T={T} />
+            <ReadBox title="Recipient Summary" value={c.recipientReviewSummary || ""} T={T} />
+            <ReadBox title="Nonhostile Questions" value={c.nonhostileQuestions || ""} T={T} />
+            <ReadBox title="Self-Critique" value={c.selfCritique || ""} T={T} />
+            <ReadBox title="Scheduled" value={scheduled} T={T} />
+            <ReadBox title="Agreements / Decisions" value={c.decisionsAgreements || ""} T={T} />
+            <ReadBox title="Apologies & Forgiveness" value={c.apologiesForgiveness || ""} T={T} />
+            <ReadBox title="Follow-up Plan" value={c.followUpPlan || ""} T={T} />
+            {c.recap && <ReadBox title="Recap" value={c.recap} T={T} />}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <GhostButton T={T} onClick={copyRecap}>Copy Recap</GhostButton>
+              {(c.proposedDate || c.proposedTime || c.proposedDescriptor) && (
+                <GhostButton
+                  T={T}
+                  onClick={() => downloadICS({
+                    title: "TrueGlue: Conflict Discussion",
+                    description: `Issue: ${c.issueSentence || ""}\\nDetails: ${c.issueDetails || ""}`,
+                    dateISO: c.proposedDate, timeHHMM: c.proposedTime,
+                  })}
+                >
+                  Download .ics
+                </GhostButton>
+              )}
+            </div>
+
+            {/* Testimony Corner */}
+            <div style={{ marginTop: 16 }}>
+              <h4 style={{ marginTop: 0 }}>Testimony Corner (optional)</h4>
+              {editableTestimony ? (
+                <>
+                  <Field
+                    label="Share a 1–2 sentence encouragement (≤250 chars)"
+                    value={testimony}
+                    onChange={(v) => setTestimony(v.slice(0, 250))}
+                    T={T}
+                    textarea
+                    placeholder="How did God meet you two through this?"
+                  />
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <div>
+                      <label style={{ color: T.muted, fontSize: 13, marginRight: 8 }}>Visibility:</label>
+                      <select
+                        value={vis}
+                        onChange={(e) => setVis(e.target.value as TestimonyVisibility)}
+                        style={{ border: `1px solid ${T.soft}`, background: "transparent", color: T.text, padding: "8px 10px", borderRadius: 10, outline: "none" }}
+                        onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
+                        onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+                      >
+                        <option value="private" style={{ color: "black" }}>Private</option>
+                        <option value="church" style={{ color: "black" }}>Church only (opt-in)</option>
+                        <option value="community" style={{ color: "black" }}>Community (opt-in)</option>
+                      </select>
+                    </div>
+                    <PrimaryButton
+                      T={T}
+                      disabled={!canSaveTestimony}
+                      onClick={() => {
+                        onChange?.((x) => { x.testimonyText = testimony.trim(); x.testimonyVisibility = vis; });
+                        alert("Testimony saved.");
+                      }}
+                    >
+                      Save Testimony
+                    </PrimaryButton>
+                    {c.testimonyText && (
+                      <GhostButton
+                        T={T}
+                        onClick={() => { onChange?.((x) => { x.testimonyText = ""; x.testimonyVisibility = "private"; }); }}
+                      >
+                        Withdraw
+                      </GhostButton>
+                    )}
+                  </div>
+                </>
+              ) : c.testimonyText ? (
+                <ReadBox title={`Testimony (${c.testimonyVisibility || "private"})`} value={c.testimonyText} T={T} />
+              ) : (
+                <p style={{ color: T.muted, marginTop: 0 }}>No testimony shared.</p>
+              )}
+            </div>
+
+            <p style={{ color: T.muted, marginTop: 8, marginBottom: 0 }}>
+              View-only. Resolved sessions are preserved for reflection.
+            </p>
+          </div>
+        </div>
       )}
     </div>
-
-    {/* Testimony Corner */}
-    <div style={{ marginTop: 16 }}>
-      <h4 style={{ marginTop: 0 }}>Testimony Corner (optional)</h4>
-      {editableTestimony ? (
-        <>
-          <Field label="Share a 1–2 sentence encouragement (≤250 chars)"
-                 value={testimony} onChange={(v) => setTestimony(v.slice(0, 250))} T={T} textarea
-                 placeholder="How did God meet you two through this?" />
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div>
-              <label style={{ color: T.muted, fontSize: 13, marginRight: 8 }}>Visibility:</label>
-              <select value={vis} onChange={(e) => setVis(e.target.value as TestimonyVisibility)}
-                style={{ border: `1px solid ${T.soft}`, background: "transparent", color: T.text, padding: "8px 10px", borderRadius: 10, outline: "none" }}
-                onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)} onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}>
-                <option value="private" style={{ color: "black" }}>Private</option>
-                <option value="church" style={{ color: "black" }}>Church only (opt-in)</option>
-                <option value="community" style={{ color: "black" }}>Community (opt-in)</option>
-              </select>
-            </div>
-            <PrimaryButton T={T} disabled={!canSaveTestimony} onClick={() => {
-              onChange?.((x) => { x.testimonyText = testimony.trim(); x.testimonyVisibility = vis; });
-              alert("Testimony saved.");
-            }}>Save Testimony</PrimaryButton>
-            {c.testimonyText && (
-              <GhostButton T={T} onClick={() => { onChange?.((x) => { x.testimonyText = ""; x.testimonyVisibility = "private"; }); }}>
-                Withdraw
-              </GhostButton>
-            )}
-          </div>
-        </>
-      ) : c.testimonyText ? (
-        <ReadBox title={`Testimony (${c.testimonyVisibility || "private"})`} value={c.testimonyText} T={T} />
-      ) : (<p style={{ color: T.muted, marginTop: 0 }}>No testimony shared.</p>)}
-    </div>
-
-    <p style={{ color: T.muted, marginTop: 8, marginBottom: 0 }}>View-only. Resolved sessions are preserved for reflection.</p>
-  </div>;
+  );
 }
 
 /* ----------------------------- HELPERS ---------------------------- */
@@ -817,8 +1244,10 @@ function labelForStep(s: ConflictStep) {
     case "QUESTIONS_SELFCRITIQUE": return "Questions & Self-Critique";
     case "CALM_PREPARE": return "Calm & Prepare";
     case "SCHEDULE": return "Schedule";
+    case "DIALOGUE": return "Dialogue";
     case "DECISION_REPAIR": return "Decision & Repair";
     case "RESOLVED": return "Resolved";
+    default: return String(s);
   }
 }
 
@@ -851,6 +1280,8 @@ export default function ConflictWorkflow() {
 
   const myOpen = conflicts.filter(c => c.step !== "RESOLVED" && (c.initiator === activeUser || c.recipient === activeUser));
   const myResolved = conflicts.filter(c => c.step === "RESOLVED" && (c.initiator === activeUser || c.recipient === activeUser));
+  const followups = conflicts
+    .filter(c => c.step === "RESOLVED" && typeof c.reviewAt === "number" && Date.now() >= (c.reviewAt || 0));
 
   return (
     <div style={{ color: T.text }}>
