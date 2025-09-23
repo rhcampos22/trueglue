@@ -111,7 +111,8 @@ export type MicroHabitId =
   | "loveMap"
   | "scriptureVOTD"
   | "prayer"
-  | "calmBreath";
+  | "calmBreath"
+  | "journal"; // NEW
 
 type UserProfile = {
   displayName?: string;
@@ -119,6 +120,22 @@ type UserProfile = {
   spouseName?: string;
   anniversary?: string; // YYYY-MM-DD
   church?: string;
+};
+
+// ==== Journaling types (optional; works without migrations) ====
+type JournalEntry = {
+  id: string;
+  isoDateTime: string; // e.g., 2025-09-23T07:45:00-07:00
+  text?: string;       // empty if they checked "Done on paper"
+  onPaper?: boolean;   // true when they marked done without typing
+  sharedTo?: ("spouse" | "pastor")[]; // optional, per-entry sharing
+};
+
+type JournalPrefs = {
+  remindDaily: boolean;
+  remindTime?: string;              // "HH:MM" 24h, e.g. "08:30"
+  remindAfterWorkflow: boolean;
+  historyView: "list" | "calendar"; // toggle the default view
 };
 
 /* -------------------- FEATURE FLAGS (beta-friendly, immutable) -------------------- */
@@ -150,9 +167,15 @@ export type UserState = {
   // NEW — results of the conflict style assessment
   stylePrimary?: ConflictStyle;
   styleSecondary?: ConflictStyle;
- 
- // NEW
+
+  // NEW
   profile?: UserProfile;
+
+  // NEW — Journaling (optional so older blobs load fine)
+  journal?: {
+    entries: JournalEntry[];
+    prefs: JournalPrefs;
+  };
 };
 
 function migrate(old: any): UserState | null {
@@ -1099,6 +1122,9 @@ const prayer = React.useMemo(
   [dayIndex]
 );
   const [openCalm, setOpenCalm] = React.useState(false);
+  const [openJournal, setOpenJournal] = React.useState(false);
+  const [openHistory, setOpenHistory] = React.useState(false);
+  const [openWhy, setOpenWhy] = React.useState(false);
 
   return (
     <>
@@ -1178,6 +1204,39 @@ const prayer = React.useMemo(
           onProceed={() => setOpenCalm(false)}
           seconds={60}
           scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
+        />
+      </Card>
+      
+      {/* NEW: Journaling micro-habit */}
+      <Card title="Journaling" sub="Capture a quick daily reflection (or mark paper journaling done)">
+        <div style={{ marginBottom: 10 }}>
+          <PrimaryButton T={T} variant="accent" onClick={() => setOpenJournal(true)}>
+            Open Journal
+          </PrimaryButton>
+        </div>
+
+        <HabitRow
+          id="journal"
+          title="Make a brief entry"
+          tip="2–3 sentences or mark 'Done on paper'."
+        />
+
+        <JournalHabitModal
+          open={openJournal}
+          onClose={() => setOpenJournal(false)}
+          onSaved={() => {}}
+          onOpenHistory={() => { setOpenJournal(false); setOpenHistory(true); }}
+          onOpenWhy={() => { setOpenJournal(false); setOpenWhy(true); }}
+        />
+
+        <JournalHistoryModal
+          open={openHistory}
+          onClose={() => setOpenHistory(false)}
+        />
+
+        <WhyJournalModal
+          open={openWhy}
+          onClose={() => setOpenWhy(false)}
         />
       </Card>
 
@@ -1513,14 +1572,14 @@ function Profile() {
   }
 
   const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 8,
-  border: `1px solid ${T.soft}`,
-  background: "transparent",
-  color: T.text,
-  fontSize: 14,
-};
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
+    fontSize: 14,
+  };
 
   const rowStyle: React.CSSProperties = {
     display: "grid",
@@ -1590,38 +1649,49 @@ function Profile() {
 
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <button
-  type="button"
-  onClick={save}
-  style={{
-    padding: "8px 12px",
-    borderRadius: 999,
-    border: `1px solid ${T.primary}`,
-    background: "transparent",
-    color: T.text,
-    cursor: "pointer",
-    fontSize: 13,
-  }}
->
-  Save
-</button>
-<button
-  type="button"
-  onClick={clearProfile}
-  style={{
-    padding: "8px 12px",
-    borderRadius: 999,
-    border: `1px solid ${T.soft}`,
-    background: "transparent",
-    color: T.text,
-    cursor: "pointer",
-    fontSize: 13,
-  }}
->
-  Clear
-</button>
-            {saved && <div style={{ alignSelf: "center", color: T.muted, fontSize: 13 }}>Saved ✅</div>}
+              type="button"
+              onClick={save}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: `1px solid ${T.primary}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Save
+            </button>
+
+            <button
+              type="button"
+              onClick={clearProfile}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: `1px solid ${T.soft}`,
+                background: "transparent",
+                color: T.text,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Clear
+            </button>
+
+            {saved && (
+              <div style={{ alignSelf: "center", color: T.muted, fontSize: 13 }}>
+                Saved ✅
+              </div>
+            )}
           </div>
         </div>
+      </Card>
+
+      {/* NEW: Journaling reminder controls */}
+      <Card title="Journaling Reminders" sub="Customize how and when you’re nudged to journal.">
+        <JournalPrefsEditor />
       </Card>
 
       <Card title="How Profile is Used">
@@ -1632,6 +1702,96 @@ function Profile() {
         </ul>
       </Card>
     </>
+  );
+}
+
+/* -------------------- JournalPrefsEditor (top-level component) -------------------- */
+function JournalPrefsEditor() {
+  const T = useT();
+  const { user, setUser } = useApp();
+  const u = ensureJournalBucket(user); // ensures u.journal exists
+
+  const [local, setLocal] = React.useState<JournalPrefs>(u.journal!.prefs);
+
+  // keep local state in sync if user changes elsewhere
+  React.useEffect(() => {
+    setLocal(u.journal!.prefs);
+  }, [u.journal!.prefs]);
+
+  const labelStyle: React.CSSProperties = { fontSize: 13, color: T.muted, marginBottom: 4 };
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1px solid ${T.soft}`,
+    background: "transparent",
+    color: T.text,
+    fontSize: 14,
+  };
+
+  const savePrefs = () => {
+    setUser({
+      ...u,
+      journal: { ...u.journal!, prefs: local, entries: u.journal!.entries },
+    });
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={local.remindDaily}
+          onChange={(e) => setLocal({ ...local, remindDaily: e.currentTarget.checked })}
+        />
+        <span>Daily reminder</span>
+      </label>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <label>
+          <div style={labelStyle}>Reminder time</div>
+          <input
+            type="time"
+            value={local.remindTime ?? "20:30"}
+            onChange={(e) => setLocal({ ...local, remindTime: e.currentTarget.value })}
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={{ alignSelf: "end" }}>
+          <div style={labelStyle}>Prompt after finishing a workflow</div>
+          <input
+            type="checkbox"
+            checked={local.remindAfterWorkflow}
+            onChange={(e) =>
+              setLocal({ ...local, remindAfterWorkflow: e.currentTarget.checked })
+            }
+          />{" "}
+          Enable
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={savePrefs}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: `1px solid ${T.primary}`,
+            background: "transparent",
+            color: T.text,
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          Save
+        </button>
+        <div style={{ alignSelf: "center", color: T.muted, fontSize: 12 }}>
+          (Reminders are stored locally; cross-device sync can be added later.)
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1977,6 +2137,328 @@ function CalmBreathModal({
         </p>
       </div>
     </div>
+  );
+}
+
+/** =================== Journal Modals (entry, history, why) =================== */
+function nowISOWithTZ() {
+  // local ISO with timezone offset (for human-consistent ordering)
+  const d = new Date();
+  const tz = -d.getTimezoneOffset();
+  const sign = tz >= 0 ? "+" : "-";
+  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  const hh = pad(tz / 60);
+  const mm = pad(tz % 60);
+  return d.toISOString().replace("Z", `${sign}${hh}:${mm}`);
+}
+
+function ensureJournalBucket(u: UserState): UserState {
+  if (u.journal) return u;
+  return {
+    ...u,
+    journal: {
+      entries: [],
+      prefs: {
+        remindDaily: false,
+        remindTime: "20:30",
+        remindAfterWorkflow: false,
+        historyView: "list",
+      },
+    },
+  };
+}
+
+/** Mini page with scripture + encouragement: "Why Journal?" */
+function WhyJournalModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const T = useT();
+  if (!open) return null;
+  return createPortal(
+    <div role="dialog" aria-modal="true" style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)",
+      display: "grid", placeItems: "center", zIndex: 2147483647, padding: 16
+    }}>
+      <div style={{
+        maxWidth: 700, width: "100%", maxHeight: "80vh", overflow: "auto",
+        background: T.card, border: `1px solid ${T.soft}`, borderRadius: 14, boxShadow: T.shadow, color: T.text, padding: 16
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Why Journal?</h3>
+          <button type="button" onClick={onClose} style={{
+            padding: "8px 12px", borderRadius: 10, border: `1px solid ${T.soft}`,
+            background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+          }}>Close</button>
+        </div>
+
+        <div style={{ marginTop: 10, lineHeight: 1.6 }}>
+          <p><strong>Scripture</strong></p>
+          <ul>
+            <li><em>Habakkuk 2:2</em> — “Write the vision; make it plain...”</li>
+            <li><em>Psalm 77:11–12</em> — “I will remember the deeds of the LORD... and meditate on all your work.”</li>
+            <li><em>Deut 6:6–7</em> — Keep God’s words on your heart; talk of them with your family.</li>
+          </ul>
+
+          <p style={{ marginTop: 12 }}><strong>Benefits (quick daily entries)</strong></p>
+          <ul>
+            <li><strong>Marriage:</strong> captures gratitude & repair, lowers reactivity, grows empathy.</li>
+            <li><strong>Walk with Christ:</strong> concrete record of prayers, convictions, and answered prayer.</li>
+            <li><strong>Parenting:</strong> preserves milestone memories and patterns you want to reinforce.</li>
+            <li><strong>Emotional health:</strong> names feelings, tracks triggers, shows growth over time.</li>
+          </ul>
+
+          <p style={{ marginTop: 12 }}>
+            Prefer pen & paper? Beautiful. Use TrueGlue to <em>remind</em> you daily and to
+            check off the habit—even if your words live in a notebook.
+          </p>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Journal History (list + simple calendar toggle) */
+function JournalHistoryModal({
+  open, onClose,
+}: { open: boolean; onClose: () => void }) {
+  const T = useT();
+  const { user, setUser } = useApp();
+  if (!open) return null;
+
+  const u = ensureJournalBucket(user);
+  const view = u.journal!.prefs.historyView;
+
+  const setView = (v: "list" | "calendar") => {
+    setUser({ ...u, journal: { ...u.journal!, prefs: { ...u.journal!.prefs, historyView: v } } });
+  };
+
+  // simple month grid based on today
+  const entries = [...(u.journal!.entries ?? [])].sort((a, b) =>
+    (a.isoDateTime > b.isoDateTime ? -1 : 1)
+  );
+
+  const byDay = new Map<string, number>();
+  entries.forEach((e) => {
+    const day = e.isoDateTime.slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  });
+
+  // calendar util
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth(); // 0-11
+  const first = new Date(year, month, 1);
+  const startWeekday = first.getDay(); // 0 Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: Array<{ label: string; iso?: string; count?: number }> = [];
+  for (let i = 0; i < startWeekday; i++) cells.push({ label: "" });
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ label: String(d), iso, count: byDay.get(iso) ?? 0 });
+  }
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)",
+      display: "grid", placeItems: "center", zIndex: 2147483647, padding: 16
+    }}>
+      <div style={{
+        maxWidth: 820, width: "100%", maxHeight: "85vh", overflow: "auto",
+        background: T.card, border: `1px solid ${T.soft}`, borderRadius: 14, boxShadow: T.shadow, color: T.text, padding: 16
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Journal History</h3>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              aria-pressed={view === "list"}
+              style={{
+                padding: "6px 10px", borderRadius: 999, border: `1px solid ${view === "list" ? T.primary : T.soft}`,
+                background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+              }}
+            >List</button>
+            <button
+              type="button"
+              onClick={() => setView("calendar")}
+              aria-pressed={view === "calendar"}
+              style={{
+                padding: "6px 10px", borderRadius: 999, border: `1px solid ${view === "calendar" ? T.primary : T.soft}`,
+                background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+              }}
+            >Calendar</button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "6px 10px", borderRadius: 10, border: `1px solid ${T.soft}`,
+                background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+              }}
+            >Close</button>
+          </div>
+        </div>
+
+        {view === "list" ? (
+          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+            {entries.length === 0 && <div style={{ color: T.muted }}>No entries yet.</div>}
+            {entries.map((e) => (
+              <div key={e.id} style={{
+                border: `1px solid ${T.soft}`, borderRadius: 10, padding: 12, background: "transparent"
+              }}>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>
+                  {new Date(e.isoDateTime).toLocaleString()}
+                  {e.onPaper ? " • (paper)" : ""}
+                </div>
+                {e.text ? <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{e.text}</div> : <em style={{ color: T.muted }}>No text (paper entry)</em>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+              {today.toLocaleString(undefined, { month: "long", year: "numeric" })}
+            </div>
+            <div style={{
+              display: "grid", gap: 6, gridTemplateColumns: "repeat(7, 1fr)"
+            }}>
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
+                <div key={d} style={{ fontSize: 12, color: T.muted, textAlign: "center" }}>{d}</div>
+              ))}
+              {cells.map((c, i) => (
+                <div key={i} style={{
+                  border: `1px solid ${T.soft}`, borderRadius: 8, minHeight: 64, display: "grid",
+                  gridTemplateRows: "auto 1fr", padding: 6, textAlign: "right", color: T.text, background: "transparent"
+                }}>
+                  <div style={{ fontSize: 12, color: T.muted }}>{c.label}</div>
+                  <div style={{ alignSelf: "end", justifySelf: "center", fontSize: 12 }}>
+                    {c.count ? "•".repeat(Math.min(3, c.count)) : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: T.muted }}>• indicates days with entries</div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Write-or-check modal shown from Micro-Habits */
+function JournalHabitModal({
+  open, onClose, onSaved, onOpenHistory, onOpenWhy,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  onOpenHistory: () => void;
+  onOpenWhy: () => void;
+}) {
+  const T = useT();
+  const toast = useToast();
+  const { user, setUser, completeHabit } = useApp();
+  const [text, setText] = React.useState("");
+
+  React.useEffect(() => { if (open) setText(""); }, [open]);
+  if (!open) return null;
+
+  const saveText = (opts?: { onPaper?: boolean }) => {
+    const u = ensureJournalBucket(user);
+    const entry: JournalEntry = {
+      id: Math.random().toString(36).slice(2),
+      isoDateTime: nowISOWithTZ(),
+      text: opts?.onPaper ? "" : text.trim(),
+      onPaper: !!opts?.onPaper,
+    };
+    const next: UserState = {
+      ...u,
+      journal: { ...u.journal!, entries: [entry, ...u.journal!.entries], prefs: u.journal!.prefs },
+    };
+    setUser(next);
+    completeHabit("journal");   // mark the habit
+    onSaved();
+    toast(opts?.onPaper ? "Marked done (paper)" : "Journal saved");
+    onClose();
+  };
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)",
+      display: "grid", placeItems: "center", zIndex: 2147483647, padding: 16
+    }}>
+      <div style={{
+        maxWidth: 720, width: "100%", background: T.card, border: `1px solid ${T.soft}`,
+        borderRadius: 14, boxShadow: T.shadow, color: T.text, padding: 16
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Quick Journal</h3>
+          <button type="button" onClick={onClose} style={{
+            padding: "8px 12px", borderRadius: 10, border: `1px solid ${T.soft}`,
+            background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+          }}>Close</button>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            rows={6}
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+            placeholder="Write a few sentences… (or choose 'Done on paper')"
+            style={{
+              width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, fontSize: 14, lineHeight: 1.5
+            }}
+          />
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => saveText()}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.primary}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Save Entry
+          </button>
+
+          <button
+            type="button"
+            onClick={() => saveText({ onPaper: true })}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Done on paper
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            History
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenWhy}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Why journal?
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
