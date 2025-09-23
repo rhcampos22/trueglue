@@ -131,6 +131,11 @@ type JournalEntry = {
   sharedTo?: ("spouse" | "pastor")[]; // optional, per-entry sharing
 };
 
+// NEW — global privacy prefs
+type PrivacyPrefs = {
+  allowPastorView: boolean; // master toggle for leader/mentor visibility of anonymized metrics
+};
+
 type JournalPrefs = {
   remindDaily: boolean;
   remindTime?: string;              // "HH:MM" 24h, e.g. "08:30"
@@ -175,6 +180,9 @@ export type UserState = {
   journal?: {
     entries: JournalEntry[];
     prefs: JournalPrefs;
+  // NEW — Privacy (optional; default provided in load/migrate)
+  privacy?: PrivacyPrefs;
+
   };
 };
 
@@ -184,25 +192,27 @@ function migrate(old: any): UserState | null {
   // - v2 -> v3
   if (old && typeof old === "object") {
     if (old.version === 1) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: "unity",
-        stylePrimary: old.stylePrimary,      // carry if present
-        styleSecondary: old.styleSecondary,  // carry if present
-      };
-    }
-    if (old.version === 2) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: old.selectedVerseTopic ?? "unity",
-        stylePrimary: old.stylePrimary,
-        styleSecondary: old.styleSecondary,
-      };
-    }
+  return {
+    version: STORAGE_VERSION,
+    completedHabits: old.completedHabits ?? {},
+    assessmentScores: old.assessmentScores ?? {},
+    selectedVerseTopic: "unity",
+    stylePrimary: old.stylePrimary,
+    styleSecondary: old.styleSecondary,
+    privacy: { allowPastorView: false }, // NEW
+  };
+}
+if (old.version === 2) {
+  return {
+    version: STORAGE_VERSION,
+    completedHabits: old.completedHabits ?? {},
+    assessmentScores: old.assessmentScores ?? {},
+    selectedVerseTopic: old.selectedVerseTopic ?? "unity",
+    stylePrimary: old.stylePrimary,
+    styleSecondary: old.styleSecondary,
+    privacy: { allowPastorView: false }, // NEW
+  };
+}
   }
   return null; // unknown or unsupported -> wipe to defaults in loadState()
 }
@@ -224,13 +234,14 @@ export function loadState(): UserState {
     localStorage.removeItem(STORAGE_KEY);
     throw new Error("mismatch");
   } catch {
-    return {
-      version: STORAGE_VERSION,
-      completedHabits: {},
-      assessmentScores: {},
-      selectedVerseTopic: "unity",
-    };
-  }
+  return {
+    version: STORAGE_VERSION,
+    completedHabits: {},
+    assessmentScores: {},
+    selectedVerseTopic: "unity",
+    privacy: { allowPastorView: false }, // NEW default
+  };
+}
 }
 
 export function saveState(next: UserState) {
@@ -576,6 +587,16 @@ async function copy(text: string) {
   } catch {
     // clipboard may not be available in some contexts (no-op)
   }
+}
+
+// TODO: Replace base64 with AES-GCM using Web Crypto API when moving off local-only storage.
+
+// NEW — simple "encrypted at rest" helpers (MVP). Swap for AES later.
+function encodeText(plain: string): string {
+  try { return btoa(unescape(encodeURIComponent(plain))); } catch { return plain; }
+}
+function decodeText(encoded: string): string {
+  try { return decodeURIComponent(escape(atob(encoded))); } catch { return encoded; }
 }
 
 /* -------------------- CONTEXT -------------------- */
@@ -1689,6 +1710,31 @@ function Profile() {
         </div>
       </Card>
 
+{/* NEW: Privacy & Sharing */}
+<Card title="Privacy & Sharing" sub="Control what is visible to pastors/mentors.">
+  <div style={{ display: "grid", gap: 10 }}>
+    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <input
+        type="checkbox"
+        checked={user.privacy?.allowPastorView ?? false}
+        onChange={(e) =>
+          setUser({
+            ...user,
+            privacy: { allowPastorView: e.currentTarget.checked },
+          })
+        }
+      />
+      <span>Allow pastor/mentor to view my anonymized metrics</span>
+    </label>
+
+    <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+      <div>• Journal entries are private by default and stored locally on this device.</div>
+      <div>• Only group-level counts (e.g., habit completions, number of journal entries) are shown.</div>
+      <div>• You can turn this off anytime.</div>
+    </div>
+  </div>
+</Card>
+
       {/* NEW: Journaling reminder controls */}
       <Card title="Journaling Reminders" sub="Customize how and when you’re nudged to journal.">
         <JournalPrefsEditor />
@@ -2308,7 +2354,9 @@ function JournalHistoryModal({
                   {new Date(e.isoDateTime).toLocaleString()}
                   {e.onPaper ? " • (paper)" : ""}
                 </div>
-                {e.text ? <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{e.text}</div> : <em style={{ color: T.muted }}>No text (paper entry)</em>}
+                {e.text
+  ? <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{decodeText(e.text)}</div>
+  : <em style={{ color: T.muted }}>No text (paper entry)</em>}
               </div>
             ))}
           </div>
@@ -2367,7 +2415,7 @@ function JournalHabitModal({
     const entry: JournalEntry = {
       id: Math.random().toString(36).slice(2),
       isoDateTime: nowISOWithTZ(),
-      text: opts?.onPaper ? "" : text.trim(),
+      text: opts?.onPaper ? "" : encodeText(text.trim()),
       onPaper: !!opts?.onPaper,
     };
     const next: UserState = {
@@ -2637,6 +2685,15 @@ function VotdCommentaryModal({ open, onClose, verseRef, verseText, topic }: {
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
 const T = useT();
+  const { user } = useApp(); // NEW
+
+// NEW — anonymized counts only (no names, no content)
+const habitDayCount = Object.values(user.completedHabits ?? {}).reduce(
+  (acc, arr) => acc + (arr?.length ?? 0),
+  0
+);
+const journalCount = user.journal?.entries?.length ?? 0;
+
   if (!FEATURES.churchMode) {
     return (
       <Card title="Church features">
@@ -2654,6 +2711,18 @@ const T = useT();
           <li>Export weekly summary for pastors/leaders.</li>
         </ul>
       </Card>
+
+{user.privacy?.allowPastorView && (
+  <Card title="Group Metrics (Anonymized)">
+    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+      <li>Total habit completions (count): {habitDayCount}</li>
+      <li>Total journal entries (count only): {journalCount}</li>
+    </ul>
+    <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+      These are counts only. No names, emails, or journal text are shared.
+    </div>
+  </Card>
+)}
 
       <Card title="Acceptance Criteria (Ship-Ready)">
         <ul style={{ margin: 0, paddingLeft: 18 }}>
