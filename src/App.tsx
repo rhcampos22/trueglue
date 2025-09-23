@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
 import TrueGlueLogo from "./assets/TrueGlueLogoNoText.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
-import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
+import { TG_COLORS, ThemeProvider, useTheme } from "./theme";
 import { createPortal } from "react-dom";
 import { useT, cardStyle, focusRing, PrimaryButton, Pill } from "./ui";
 
@@ -164,12 +164,11 @@ type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
 
 export type UserState = {
   version: number;
-  // Narrow types prevent typos; Partial allows adding new keys without breaking old blobs
   completedHabits: Partial<Record<MicroHabitId, string[]>>;
   assessmentScores: Partial<Record<"cooperative" | "avoidant" | "competitive", number>>;
   selectedVerseTopic: VerseTopic;
 
-  // NEW — results of the conflict style assessment
+  // NEW — results
   stylePrimary?: ConflictStyle;
   styleSecondary?: ConflictStyle;
 
@@ -180,41 +179,42 @@ export type UserState = {
   journal?: {
     entries: JournalEntry[];
     prefs: JournalPrefs;
+  };
+
   // NEW — Privacy (optional; default provided in load/migrate)
   privacy?: PrivacyPrefs;
-
-  };
 };
 
 function migrate(old: any): UserState | null {
-  // Upgrade chain:
-  // - v1 -> v3
-  // - v2 -> v3
   if (old && typeof old === "object") {
     if (old.version === 1) {
-  return {
-    version: STORAGE_VERSION,
-    completedHabits: old.completedHabits ?? {},
-    assessmentScores: old.assessmentScores ?? {},
-    selectedVerseTopic: "unity",
-    stylePrimary: old.stylePrimary,
-    styleSecondary: old.styleSecondary,
-    privacy: { allowPastorView: false }, // NEW
-  };
-}
-if (old.version === 2) {
-  return {
-    version: STORAGE_VERSION,
-    completedHabits: old.completedHabits ?? {},
-    assessmentScores: old.assessmentScores ?? {},
-    selectedVerseTopic: old.selectedVerseTopic ?? "unity",
-    stylePrimary: old.stylePrimary,
-    styleSecondary: old.styleSecondary,
-    privacy: { allowPastorView: false }, // NEW
-  };
-}
+      return {
+        version: STORAGE_VERSION,
+        completedHabits: old.completedHabits ?? {},
+        assessmentScores: old.assessmentScores ?? {},
+        selectedVerseTopic: "unity",
+        stylePrimary: old.stylePrimary,
+        styleSecondary: old.styleSecondary,
+        profile: old.profile ?? undefined,
+        journal: old.journal ?? DEFAULT_JOURNAL,
+        privacy: old.privacy ?? DEFAULT_PRIVACY,
+      };
+    }
+    if (old.version === 2) {
+      return {
+        version: STORAGE_VERSION,
+        completedHabits: old.completedHabits ?? {},
+        assessmentScores: old.assessmentScores ?? {},
+        selectedVerseTopic: old.selectedVerseTopic ?? "unity",
+        stylePrimary: old.stylePrimary,
+        styleSecondary: old.styleSecondary,
+        profile: old.profile ?? undefined,
+        journal: old.journal ?? DEFAULT_JOURNAL,
+        privacy: old.privacy ?? DEFAULT_PRIVACY,
+      };
+    }
   }
-  return null; // unknown or unsupported -> wipe to defaults in loadState()
+  return null;
 }
 
 export function loadState(): UserState {
@@ -235,12 +235,13 @@ export function loadState(): UserState {
     throw new Error("mismatch");
   } catch {
   return {
-    version: STORAGE_VERSION,
-    completedHabits: {},
-    assessmentScores: {},
-    selectedVerseTopic: "unity",
-    privacy: { allowPastorView: false }, // NEW default
-  };
+  version: STORAGE_VERSION,
+  completedHabits: {},
+  assessmentScores: {},
+  selectedVerseTopic: "unity",
+  journal: DEFAULT_JOURNAL,         // ← add
+  privacy: DEFAULT_PRIVACY,         // existing
+};
 }
 }
 
@@ -591,12 +592,39 @@ async function copy(text: string) {
 
 // TODO: Replace base64 with AES-GCM using Web Crypto API when moving off local-only storage.
 
-// NEW — simple "encrypted at rest" helpers (MVP). Swap for AES later.
+// --- base64 helpers without deprecated escape/unescape ---
+const te = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+const td = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
+
+function toBase64(u8: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin);
+}
+function fromBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
 function encodeText(plain: string): string {
-  try { return btoa(unescape(encodeURIComponent(plain))); } catch { return plain; }
+  try {
+    if (te) return toBase64(te.encode(plain));
+    // very old browsers fallback
+    return btoa(unescape(encodeURIComponent(plain)));
+  } catch {
+    return plain;
+  }
 }
 function decodeText(encoded: string): string {
-  try { return decodeURIComponent(escape(atob(encoded))); } catch { return encoded; }
+  try {
+    if (td) return td.decode(fromBase64(encoded));
+    // very old browsers fallback
+    return decodeURIComponent(escape(atob(encoded)));
+  } catch {
+    return encoded;
+  }
 }
 
 /* -------------------- CONTEXT -------------------- */
@@ -719,6 +747,7 @@ function Tabs<ID extends string>({
 
   return (
     <div className={className}>
+      {/* ✅ This nav now renders the TAB BUTTONS (not the panels) */}
       <nav
         role="tablist"
         aria-label={label}
@@ -730,18 +759,18 @@ function Tabs<ID extends string>({
       >
         {items.map((t) => {
           const active = value === t.id;
-          const tabId = `tab-${t.id}`;
           const panelId = `panel-${t.id}`;
+          const tabId = `tab-${t.id}`;
           return (
             <button
               key={t.id}
               id={tabId}
-              type="button"
               role="tab"
-              aria-selected={active}
               aria-controls={panelId}
+              aria-selected={active}
               onClick={() => onChange(t.id)}
-              style={active ? (activePillS ?? {}) : (pillS ?? {})}
+              type="button"
+              style={active ? activePillS : pillS}
             >
               {t.label}
             </button>
@@ -749,6 +778,7 @@ function Tabs<ID extends string>({
         })}
       </nav>
 
+      {/* ✅ Panels rendered once, below the nav */}
       {items.map((t) => {
         const active = value === t.id;
         const panelId = `panel-${t.id}`;
@@ -924,7 +954,7 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
   const pillStyleThemed: React.CSSProperties = {
     padding: "8px 12px",
     borderRadius: 999,
-    border: `1px solid ${T.soft}`,    // use shorthand (prevents React warning)
+    border: `1px solid ${T.soft}`,    // shorthand (prevents React warning)
     background: "transparent",
     color: T.text,
     cursor: "pointer",
@@ -939,16 +969,20 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
     boxShadow: "0 0 0 2px rgba(47,165,165,0.20)",
   };
 
-  // Define your tab items (labels + panels)
-  const items: ReadonlyArray<TabItem<TGRoute>> = [
-  { id: "home",        label: "Home",            panel: <Home /> },
-  { id: "microhabits", label: "Micro-Habits",    panel: <MicroHabits /> },
-  { id: "lessons",     label: "Lessons",         panel: <Lessons /> },
-  { id: "workflow",    label: "Conflict Flow",   panel: <ConflictWorkflow /> },
-  { id: "assessments", label: "Assessments",     panel: <Assessments /> },
-  { id: "profile",     label: "Profile",         panel: <Profile /> },
-  { id: "church",      label: "Church",          panel: <ChurchPanel /> },
-];
+  // Base set of tabs (always visible)
+  const itemsBase: ReadonlyArray<TabItem<TGRoute>> = [
+    { id: "home",        label: "Home",          panel: <Home /> },
+    { id: "microhabits", label: "Micro-Habits",  panel: <MicroHabits /> },
+    { id: "lessons",     label: "Lessons",       panel: <Lessons /> },
+    { id: "workflow",    label: "Conflict Flow", panel: <ConflictWorkflow /> },
+    { id: "assessments", label: "Assessments",   panel: <Assessments /> },
+    { id: "profile",     label: "Profile",       panel: <Profile /> },
+  ];
+
+  // Add "Church" only if feature flag is enabled
+  const items = FEATURES.churchMode
+    ? [...itemsBase, { id: "church", label: "Church", panel: <ChurchPanel /> }]
+    : itemsBase;
 
   return (
     <Tabs
@@ -1755,14 +1789,18 @@ function Profile() {
 function JournalPrefsEditor() {
   const T = useT();
   const { user, setUser } = useApp();
-  const u = ensureJournalBucket(user); // ensures u.journal exists
+
+  // ✅ ensureJournalBucket only when user actually changes
+  const u = React.useMemo(() => ensureJournalBucket(user), [user]);
 
   const [local, setLocal] = React.useState<JournalPrefs>(u.journal!.prefs);
 
-  // keep local state in sync if user changes elsewhere
+  // ✅ Only update local when the prefs object reference changes
   React.useEffect(() => {
-    setLocal(u.journal!.prefs);
-  }, [u.journal!.prefs]);
+    if (local !== u.journal!.prefs) {
+      setLocal(u.journal!.prefs);
+    }
+  }, [u.journal!.prefs, local]);
 
   const labelStyle: React.CSSProperties = { fontSize: 13, color: T.muted, marginBottom: 4 };
   const inputStyle: React.CSSProperties = {
@@ -2188,14 +2226,20 @@ function CalmBreathModal({
 
 /** =================== Journal Modals (entry, history, why) =================== */
 function nowISOWithTZ() {
-  // local ISO with timezone offset (for human-consistent ordering)
   const d = new Date();
-  const tz = -d.getTimezoneOffset();
-  const sign = tz >= 0 ? "+" : "-";
-  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, "0");
-  const hh = pad(tz / 60);
-  const mm = pad(tz % 60);
-  return d.toISOString().replace("Z", `${sign}${hh}:${mm}`);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+
+  const offMin = -d.getTimezoneOffset();           // e.g., -420 => PDT
+  const sign = offMin >= 0 ? "+" : "-";
+  const offH = pad(Math.floor(Math.abs(offMin) / 60));
+  const offM = pad(Math.abs(offMin) % 60);
+  return `${y}-${m}-${day}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
 }
 
 function ensureJournalBucket(u: UserState): UserState {
