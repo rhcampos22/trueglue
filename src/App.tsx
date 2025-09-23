@@ -201,35 +201,61 @@ export const DEFAULT_JOURNAL: NonNullable<UserState["journal"]> = {
   prefs: { remindDaily: false, remindTime: "20:30", remindAfterWorkflow: false, historyView: "list" },
 };
 
+function DEFAULT_USER_FROM(old: any, overrides: Partial<UserState> = {}): UserState {
+  return {
+    version: STORAGE_VERSION,
+    completedHabits: old.completedHabits ?? {},
+    assessmentScores: old.assessmentScores ?? {},
+    selectedVerseTopic: "unity",
+    stylePrimary: old.stylePrimary,
+    styleSecondary: old.styleSecondary,
+    profile: old.profile ?? undefined,
+    journal: old.journal ?? DEFAULT_JOURNAL,
+    privacy: old.privacy ?? DEFAULT_PRIVACY,
+    ...overrides,
+  };
+}
+
 function migrate(old: any): UserState | null {
-  if (old && typeof old === "object") {
-    if (old.version === 1) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: "unity",
-        stylePrimary: old.stylePrimary,
-        styleSecondary: old.styleSecondary,
-        profile: old.profile ?? undefined,
-        journal: old.journal ?? DEFAULT_JOURNAL,
-        privacy: old.privacy ?? DEFAULT_PRIVACY,
-      };
-    }
-    if (old.version === 2) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: old.selectedVerseTopic ?? "unity",
-        stylePrimary: old.stylePrimary,
-        styleSecondary: old.styleSecondary,
-        profile: old.profile ?? undefined,
-        journal: old.journal ?? DEFAULT_JOURNAL,
-        privacy: old.privacy ?? DEFAULT_PRIVACY,
-      };
-    }
+  if (!old || typeof old !== "object") return null;
+
+  
+  if (old.version === 1) {
+  return DEFAULT_USER_FROM(old, { selectedVerseTopic: old.selectedVerseTopic ?? "unity" });
+}
+
+  if (old.version === 2) return { ...DEFAULT_USER_FROM(old, { selectedVerseTopic: old.selectedVerseTopic ?? "unity" }) };
+
+  // ✅ v3 → current (catch the missing case)
+  if (old.version === 3) {
+    return {
+      version: STORAGE_VERSION,
+      completedHabits: old.completedHabits ?? {},
+      assessmentScores: old.assessmentScores ?? {},
+      selectedVerseTopic: old.selectedVerseTopic ?? "unity",
+      stylePrimary: old.stylePrimary,
+      styleSecondary: old.styleSecondary,
+      profile: old.profile ?? undefined,
+      journal: old.journal ?? DEFAULT_JOURNAL,
+      privacy: old.privacy ?? DEFAULT_PRIVACY,
+    };
   }
+
+  // Generic forwarder: any older < STORAGE_VERSION we don’t know about
+  if (Number.isFinite(old.version) && old.version < STORAGE_VERSION) {
+    return {
+      version: STORAGE_VERSION,
+      completedHabits: old.completedHabits ?? {},
+      assessmentScores: old.assessmentScores ?? {},
+      selectedVerseTopic: old.selectedVerseTopic ?? "unity",
+      stylePrimary: old.stylePrimary,
+      styleSecondary: old.styleSecondary,
+      profile: old.profile ?? undefined,
+      journal: old.journal ?? DEFAULT_JOURNAL,
+      privacy: old.privacy ?? DEFAULT_PRIVACY,
+    };
+  }
+
   return null;
 }
 
@@ -801,22 +827,23 @@ function Tabs<ID extends string>({
 
       {/* ✅ Panels rendered once, below the nav */}
       {items.map((t) => {
-        const active = value === t.id;
-        const panelId = `panel-${t.id}`;
-        const tabId = `tab-${t.id}`;
-        return (
-          <div
-            key={t.id}
-            id={panelId}
-            role="tabpanel"
-            aria-labelledby={tabId}
-            tabIndex={0}
-            hidden={!active}
-          >
-            {active ? t.panel : null}
-          </div>
-        );
-      })}
+  const active = value === t.id;
+  const panelId = `panel-${t.id}`;
+  const tabId = `tab-${t.id}`;
+  return (
+    <div
+      key={t.id}
+      id={panelId}
+      role="tabpanel"
+      aria-labelledby={tabId}
+      tabIndex={0}
+      hidden={!active}
+    >
+      {/* render ALWAYS to preserve state */}
+      {t.panel}
+    </div>
+  );
+})}
     </div>
   );
 }
@@ -923,13 +950,19 @@ useEffect(() => {
 );
 
 // Auto-lock session AES key after inactivity (only when PIN enabled)
+// in AppShell
+const [, force] = React.useReducer((x) => x + 1, 0);
+
 useEffect(() => {
   const minutes = user.privacy?.autoLockMinutes ?? 10;
   if (!user.privacy?.pinEnabled) return;
   let timer: number | null = null;
   const reset = () => {
     if (timer) window.clearTimeout(timer);
-    timer = window.setTimeout(() => { SESSION_AES_KEY = null; }, minutes * 60 * 1000);
+    timer = window.setTimeout(() => {
+      SESSION_AES_KEY = null;
+      force(); // force a render so UI updates from Unlocked → Locked
+    }, minutes * 60 * 1000);
   };
   const events = ["mousemove", "keydown", "click", "visibilitychange"];
   events.forEach((ev) => window.addEventListener(ev, reset));
@@ -1825,30 +1858,35 @@ function Profile() {
           type="checkbox"
           checked={!!user.privacy?.pinEnabled}
           onChange={async (e) => {
-            const enable = e.currentTarget.checked;
-            const next = {
-              ...user,
-              privacy: {
-                ...(user.privacy ?? DEFAULT_PRIVACY),
-                pinEnabled: enable,
-                consentLog: user.privacy?.consentLog ?? [],
-              },
-            };
-            setUser(next);
-            if (enable) {
-              const pin = prompt("Set a 4–6 digit PIN:");
-              if (pin && /^\d{4,6}$/.test(pin)) {
-                const salt = getOrCreateSaltB64();
-                SESSION_AES_KEY = await deriveKeyFromPin(pin, salt);
-                toast("PIN set & session unlocked");
-              } else {
-                toast("Invalid PIN format");
-              }
-            } else {
-              SESSION_AES_KEY = null;
-              toast("PIN disabled");
-            }
-          }}
+  const enable = e.currentTarget.checked;
+  let next = {
+    ...user,
+    privacy: {
+      ...(user.privacy ?? DEFAULT_PRIVACY),
+      pinEnabled: enable,
+      consentLog: user.privacy?.consentLog ?? [],
+    },
+  };
+  setUser(next);
+
+  if (enable) {
+    const pin = prompt("Set a 4–6 digit PIN:");
+    if (pin && /^\d{4,6}$/.test(pin)) {
+      const salt = getOrCreateSaltB64();
+      SESSION_AES_KEY = await deriveKeyFromPin(pin, salt);
+      toast("PIN set & session unlocked");
+    } else {
+      // revert
+      SESSION_AES_KEY = null;
+      next = { ...next, privacy: { ...next.privacy!, pinEnabled: false } };
+      setUser(next);
+      toast("PIN setup cancelled");
+    }
+  } else {
+    SESSION_AES_KEY = null;
+    toast("PIN disabled");
+  }
+}}
         />
         <span>Enable App PIN (required to view journal text)</span>
       </label>
@@ -1857,10 +1895,60 @@ function Profile() {
         <span style={{ fontSize: 13, color: T.muted, width: 180 }}>Auto-lock after</span>
         <select
           value={user.privacy?.autoLockMinutes ?? 10}
-          onChange={(e) =>
-            setUser({
-              ...user,
-              priv
+onChange={(e) =>
+  setUser({
+    ...user,
+    privacy: {
+      ...(user.privacy ?? DEFAULT_PRIVACY),
+      // cast to the allowed union; Number(...) yields 5|10|30|60 here
+      autoLockMinutes: Number(e.currentTarget.value) as 5 | 10 | 30 | 60,
+    },
+  })
+}
+>
+  <option value={5}>5 minutes</option>
+  <option value={10}>10 minutes</option>
+  <option value={30}>30 minutes</option>
+  <option value={60}>60 minutes</option>
+</select>
+</label>
+
+{user.privacy?.pinEnabled && (
+  <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+    <button
+      type="button"
+      onClick={async () => {
+        const pin = prompt("Enter your 4–6 digit PIN to unlock this session:");
+        if (pin && /^\d{4,6}$/.test(pin)) {
+          const salt = getOrCreateSaltB64();
+          SESSION_AES_KEY = await deriveKeyFromPin(pin, salt);
+          toast("Session unlocked");
+        } else if (pin) {
+          toast("Invalid PIN format");
+        }
+      }}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${T.primary}`,
+        background: "transparent",
+        color: T.text,
+        cursor: "pointer",
+        fontSize: 13,
+      }}
+    >
+      Unlock with PIN
+    </button>
+    {SESSION_AES_KEY ? (
+      <span style={{ fontSize: 12, color: T.muted }}>Unlocked ✓</span>
+    ) : (
+      <span style={{ fontSize: 12, color: T.muted }}>Locked</span>
+    )}
+  </div>
+)}
+</div> {/* end PIN & auto-lock section */}
+</div> {/* end grid container inside Privacy card */}
+</Card> {/* end Privacy & Sharing card */}
 
       {/* NEW: Journaling reminder controls */}
       <Card title="Journaling Reminders" sub="Customize how and when you’re nudged to journal.">
@@ -2558,16 +2646,23 @@ function JournalHabitModal({
   const saveText = async (opts?: { onPaper?: boolean }) => {
   const u = ensureJournalBucket(user);
   let encrypted: { iv: string; blob: string } | undefined = undefined;
+
+  // 👇 Capture the session key once
+  const key = SESSION_AES_KEY;
+
   if (!opts?.onPaper) {
-    if (!SESSION_AES_KEY && u.privacy?.pinEnabled) {
+    if (u.privacy?.pinEnabled && !key) {
       toast("Unlock with your PIN first");
       return;
     }
-    const key = SESSION_AES_KEY
-      ? SESSION_AES_KEY
-      : await deriveKeyFromPin("0000", getOrCreateSaltB64()); // fallback if PIN not enabled yet
-    encrypted = await encryptJSONWithKey(key, { text: text.trim() });
+    if (key) {
+      encrypted = await encryptJSONWithKey(key, { text: text.trim() });
+    } else {
+      // PIN not enabled → store plaintext (encrypted = undefined)
+      // nothing to do
+    }
   }
+
   const entry: JournalEntry = {
     id: Math.random().toString(36).slice(2),
     isoDateTime: nowISOWithTZ(),
@@ -2668,13 +2763,13 @@ function JournalHabitModal({
 
 // Small helper to render decrypted journal text
 function DecryptedText({ payload }: { payload: { iv: string; blob: string } }) {
-  const [txt, setTxt] = React.useState<string>("(decrypting…)");
+  const [txt, setTxt] = React.useState<string>(SESSION_AES_KEY ? "(decrypting…)" : "(locked — enter PIN)");
   React.useEffect(() => {
     let alive = true;
     (async () => {
+      if (!SESSION_AES_KEY) return;
       try {
-        const key = SESSION_AES_KEY ?? await deriveKeyFromPin("0000", getOrCreateSaltB64());
-        const obj = await decryptJSONWithKey<{ text: string }>(key, payload);
+        const obj = await decryptJSONWithKey<{ text: string }>(SESSION_AES_KEY, payload);
         if (alive) setTxt(obj.text);
       } catch {
         if (alive) setTxt("(unable to decrypt)");
