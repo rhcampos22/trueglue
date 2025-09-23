@@ -1,0 +1,6 @@
+﻿diff --git a/src/App.tsx b/src/App.tsx
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@
+-export const STORAGE_VERSION = 3;
++export const STORAGE_VERSION = 3;
