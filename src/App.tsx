@@ -2776,7 +2776,7 @@ function DecryptedText({ payload }: { payload: { iv: string; blob: string } }) {
       }
     })();
     return () => { alive = false; };
-  }, [payload]);
+  }, [payload, SESSION_AES_KEY]);
   return <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{txt}</div>;
 }
 
