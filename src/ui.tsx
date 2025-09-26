@@ -2,6 +2,10 @@
 import React from "react";
 import { useTheme } from "./theme";
 
+/** ─────────────────────────────────────────────────────────────────────────────
+ *  Legacy Theme adapter (kept so existing code keeps working)
+ *  You can migrate to useTheme().colors and useTheme().tokens directly later.
+ *  ────────────────────────────────────────────────────────────────────────────*/
 export type Theme = {
   bg: string;
   card: string;
@@ -10,18 +14,15 @@ export type Theme = {
   muted: string;
   primary: string;
   accent: string;
-  /** text color when placed on primary background */
   onPrimary: string;
-  /** text color when placed on accent background */
   onAccent: string;
   success: string;
   danger: string;
   shadow: string;
 };
 
-// Build a theme adapter that matches your ConflictWorkflow colors
 export function useT(): Theme {
-  const { theme, colors } = useTheme();
+  const { theme, colors, tokens } = useTheme();
   return {
     bg: colors.bg,
     card: colors.surface,
@@ -30,9 +31,8 @@ export function useT(): Theme {
     muted: colors.textDim,
     primary: colors.primary,
     accent: colors.accent,
-    // Fallbacks ensure you don't have to touch theme.tsx right now
     onPrimary: (colors as any).onPrimary ?? "#001315",
-    onAccent:  (colors as any).onAccent  ?? "#000000",
+    onAccent: (colors as any).onAccent ?? "#000000",
     success: (colors as any).success ?? "#3BB273",
     danger: (colors as any).danger ?? "#E85C5C",
     shadow:
@@ -42,8 +42,17 @@ export function useT(): Theme {
   };
 }
 
-export const focusRing = "0 0 0 3px rgba(47,165,165,.35)";
+/** Optional: legacy focus ring string, if your code sets boxShadow manually */
+export const focusRingShadow = "0 0 0 3px rgba(47,165,165,.35)";
 
+/** New: focus ring as a style helper */
+export const focusRing = (focusColor?: string): React.CSSProperties => ({
+  outline: `3px solid ${focusColor ?? "var(--tg-focus, #6B4DE6)"}`,
+  outlineOffset: 3,
+  borderRadius: 10,
+});
+
+/** Card style (legacy signature kept) */
 export function cardStyle(T: Theme): React.CSSProperties {
   return {
     background: T.card,
@@ -54,7 +63,229 @@ export function cardStyle(T: Theme): React.CSSProperties {
   };
 }
 
-// Buttons that visually match your ConflictWorkflow
+/** Inputs honoring dark mode (legacy helpers kept) */
+export function inputStyle(T: Theme): React.CSSProperties {
+  return {
+    width: "100%",
+    background: "transparent",
+    color: T.text,
+    border: `1px solid ${T.soft}`,
+    borderRadius: 12,
+    padding: "12px 14px",
+    outline: "none",
+  };
+}
+export function textareaStyle(T: Theme): React.CSSProperties {
+  return { ...inputStyle(T), minHeight: 106, resize: "vertical" as const };
+}
+
+/** ─────────────────────────────────────────────────────────────────────────────
+ *  New Unified Components
+ *  ────────────────────────────────────────────────────────────────────────────*/
+
+/** Button */
+type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive" | "accent";
+type ButtonSize = "sm" | "md" | "lg";
+
+export const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+    loading?: boolean;
+  }
+>(function Button(
+  { variant = "primary", size = "md", loading = false, style, children, ...props },
+  ref
+) {
+  const { colors, tokens } = useTheme();
+
+  const paddings: Record<ButtonSize, string> = {
+    sm: "6px 10px",
+    md: "10px 14px",
+    lg: "14px 18px",
+  };
+  const fontSize =
+    size === "sm" ? tokens.font.sm : size === "lg" ? tokens.font.lg : tokens.font.md;
+
+  const variants: Record<ButtonVariant, React.CSSProperties> = {
+    primary: {
+      background: colors.primary,
+      color: colors.onPrimary,
+      border: `1px solid ${colors.primary}`,
+    },
+    secondary: {
+      background: colors.surface,
+      color: colors.text,
+      border: `1px solid ${colors.border}`,
+    },
+    ghost: {
+      background: "transparent",
+      color: colors.text,
+      border: `1px dashed ${colors.border}`,
+    },
+    destructive: {
+      background: colors.danger,
+      color: colors.onDanger,
+      border: `1px solid ${colors.danger}`,
+    },
+    accent: {
+      background: colors.accent,
+      color: colors.onAccent ?? "#000",
+      border: `1px solid ${colors.accent}`,
+    },
+  };
+
+  return (
+    <button
+      ref={ref}
+      {...props}
+      aria-busy={loading || undefined}
+      style={{
+        padding: paddings[size],
+        fontSize,
+        borderRadius: tokens.radius.pill,
+        boxShadow: tokens.shadow.sm,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        transition: "transform 80ms ease, box-shadow 120ms ease, background 120ms ease",
+        userSelect: "none",
+        ...variants[variant],
+        ...style,
+      }}
+      onMouseDown={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px)";
+      }}
+      onMouseUp={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+      }}
+    >
+      {loading ? "…" : children}
+    </button>
+  );
+});
+
+/** Keyboard-friendly Tab Pill */
+export function TabPill({
+  active,
+  onSelect,
+  children,
+  style,
+  ...rest
+}: {
+  active?: boolean;
+  onSelect?: () => void;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { colors, tokens } = useTheme();
+  return (
+    <button
+      role="tab"
+      aria-selected={!!active}
+      tabIndex={active ? 0 : -1}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelect?.();
+      }}
+      {...rest}
+      style={{
+        padding: "8px 12px",
+        borderRadius: tokens.radius.pill,
+        border: `1px solid ${active ? colors.primary : colors.border}`,
+        background: active ? colors.primarySoft : colors.surface,
+        color: active ? colors.primary : colors.text,
+        transition: "background 120ms ease, border-color 120ms ease",
+        marginRight: 8,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Modal with ARIA and Escape/backdrop close */
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  initialFocusRef,
+  width = "min(560px, 92vw)",
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  /** Pass a ref to focus when the modal opens */
+  initialFocusRef?: React.RefObject<HTMLElement>;
+  width?: string;
+}) {
+  const { colors, tokens } = useTheme();
+
+  React.useEffect(() => {
+    if (open && initialFocusRef?.current) {
+      initialFocusRef.current.focus();
+    }
+  }, [open, initialFocusRef]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      className="tg-fade-in"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "grid",
+        placeItems: "center",
+        background: "rgba(0,0,0,.36)",
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="tg-scale-in"
+        style={{
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
+          borderRadius: tokens.radius.lg,
+          boxShadow: tokens.shadow.lg,
+          padding: tokens.spacing.lg,
+          width,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: tokens.spacing.md,
+          }}
+        >
+          <h2 id="modal-title" style={{ fontSize: tokens.font.h2, margin: 0 }}>
+            {title}
+          </h2>
+          <Button variant="ghost" aria-label="Close" onClick={onClose}>
+            ✕
+          </Button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** ─────────────────────────────────────────────────────────────────────────────
+ *  Legacy Shims (so your existing components keep working)
+ *  ────────────────────────────────────────────────────────────────────────────*/
+
+/** PrimaryButton (shim) */
 export function PrimaryButton({
   children,
   onClick,
@@ -67,101 +298,71 @@ export function PrimaryButton({
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
-  T: Theme;
+  T: Theme; // ignored in favor of theme context; kept for API compatibility
   variant?: "primary" | "accent" | "outline";
   style?: React.CSSProperties;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const base: React.CSSProperties = {
-    padding: "12px 16px",
-    borderRadius: 12,
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontWeight: 700,
-    border: "1px solid transparent", // use shorthand to avoid borderColor warnings
-    background: "transparent",
-    color: T.text,
-    opacity: disabled ? 0.6 : 1,
-    outline: "none",
-    boxShadow: "none",
-  };
-
-  const byVariant: Record<NonNullable<typeof variant>, React.CSSProperties> = {
-    primary: {
-      background: T.primary,
-      color: T.onPrimary,
-      border: `1px solid ${T.primary}`,
-    },
-    accent: {
-      background: T.accent,
-      color: T.onAccent,
-      border: `1px solid ${T.accent}`,
-    },
-    outline: {
-      background: "transparent",
-      color: T.text,
-      border: `1px solid ${T.soft}`,
-    },
-  };
-
+  const mapped: ButtonVariant =
+    variant === "accent" ? "accent" : variant === "outline" ? "secondary" : "primary";
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Button
+      variant={mapped}
       disabled={disabled}
+      onClick={onClick}
+      style={style}
       {...props}
-      style={{ ...base, ...byVariant[variant], ...style }}
-      onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px rgba(47,165,165,.35)")}
-      onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
+/** GhostButton (shim) */
 export function GhostButton({
-  children, onClick, T,
+  children,
+  onClick,
+  T, // ignored, kept for compatibility
+  style,
+  ...props
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   T: Theme;
-}) {
+  style?: React.CSSProperties;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        border: `1px solid ${T.soft}`,
-        borderRadius: 12,
-        padding: "12px 16px",
-        cursor: "pointer",
-        fontWeight: 600,
-        background: "transparent",
-        color: T.text,
-        outline: "none",
-      }}
-      onFocus={(e) => (e.currentTarget.style.boxShadow = focusRing)}
-      onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
-    >
+    <Button variant="ghost" onClick={onClick} style={style} {...props}>
       {children}
-    </button>
+    </Button>
   );
 }
 
-// Chips/badges
+/** Pill (kept; feel free to migrate to TabPill where appropriate) */
 export function Pill({
-  children, T, color,
+  children,
+  T, // optional legacy adapter
+  color,
+  style,
+  ...rest
 }: {
   children: React.ReactNode;
-  T: Theme;
+  T?: Theme;
   color?: string;
-}) {
+} & React.HTMLAttributes<HTMLSpanElement>) {
+  const { colors, tokens } = useTheme();
+  const border = color ?? (T ? T.soft : colors.border);
+  const text = color ? color : T ? T.muted : colors.textDim;
   return (
     <span
+      {...rest}
       style={{
         display: "inline-block",
-        border: `1px solid ${color ?? T.soft}`,
+        border: `1px solid ${border}`,
         padding: "6px 12px",
         borderRadius: 999,
-        color: color ?? T.muted,
+        color: text,
         fontSize: 12,
+        ...style,
       }}
     >
       {children}
@@ -169,19 +370,3 @@ export function Pill({
   );
 }
 
-// Inputs that honor dark mode
-export function inputStyle(T: Theme): React.CSSProperties {
-  return {
-    width: "100%",
-    background: "transparent",
-    color: T.text,
-    border: `1px solid ${T.soft}`,
-    borderRadius: 12,
-    padding: "12px 14px",
-    outline: "none",
-  };
-}
-
-export function textareaStyle(T: Theme): React.CSSProperties {
-  return { ...inputStyle(T), minHeight: 106, resize: "vertical" as const };
-}

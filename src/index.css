@@ -1,0 +1,27 @@
+/* Global focus ring for keyboard users */
+:where(button,[role="tab"],a,input,textarea,select):focus-visible {
+  outline: 3px solid var(--tg-focus, #6B4DE6);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+/* Motion helpers (respecting reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  .tg-fade-in   { animation: tg-fade-in 180ms ease-out both; }
+  .tg-slide-up  { animation: tg-slide-up 220ms ease-out both; }
+  .tg-scale-in  { animation: tg-scale-in 160ms ease-out both; }
+}
+@keyframes tg-fade-in   { from { opacity: 0 } to { opacity: 1 } }
+@keyframes tg-slide-up  { from { transform: translateY(6px); opacity: 0 }
+                          to { transform: translateY(0); opacity: 1 } }
+@keyframes tg-scale-in  { from { transform: scale(.98); opacity: 0 }
+                          to { transform: scale(1); opacity: 1 } }
+
+/* Collapsible container transitions */
+.tg-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+.tg-collapse[data-open="true"] { grid-template-rows: 1fr; }
+.tg-collapse > div { overflow: hidden; min-height: 0; }
