@@ -672,6 +672,19 @@ function distinctJournalDays(entries: JournalEntry[], n?: number): number {
   return set.size;
 }
 
+/** Consecutive-day journaling streak based on distinct days with any entry. */
+function journalStreak(entries: JournalEntry[]): number {
+  if (!entries?.length) return 0;
+  const days = new Set(entries.map(e => e.isoDateTime.slice(0,10)));
+  let s = 0;
+  let d = todayISO();
+  while (days.has(d)) {
+    s++;
+    d = dateAdd(d, -1);
+  }
+  return s;
+}
+
 function countsBy(predicate: (e: JournalEntry) => boolean, entries: JournalEntry[]): number {
   return entries.reduce((acc, e) => acc + (predicate(e) ? 1 : 0), 0);
 }
@@ -713,6 +726,52 @@ function distinctDaysWithAnyHabit(u: UserState, n: number): number {
   }
   return set.size;
 }
+
+/** Unique YYYY-MM-DD days extracted from journal entries */
+function journalDays(entries?: JournalEntry[]): string[] {
+  const set = new Set<string>();
+  for (const e of entries ?? []) set.add(e.isoDateTime.slice(0, 10));
+  return Array.from(set).sort();
+}
+
+/** Build a presence array (0/1) for the last N days ending today (inclusive) */
+function presenceSeries(dates: string[], n: number): number[] {
+  const N = Math.max(0, Math.floor(n || 0));
+  if (N === 0) return [];
+  const has = new Set(dates);
+  const start = dateAdd(todayISO(), -N + 1);
+  const out: number[] = [];
+  let day = start;
+  for (let i = 0; i < N; i++) {
+    out.push(has.has(day) ? 1 : 0);
+    day = dateAdd(day, 1);
+  }
+  return out;
+}
+
+/** Minimal sparkline as tiny bars */
+const Sparkline = React.memo(function Sparkline(
+  { series, T }: { series: number[]; T: ReturnType<typeof useT> }
+) {
+  const max = Math.max(1, ...series);
+  return (
+    <div style={{ display: "flex", gap: 2, alignItems: "flex-end" }}>
+      {series.map((v, i) => (
+        <div
+          key={i}
+          aria-hidden
+          style={{
+            width: 6,
+            height: Math.round(((v / max) || 0) * 22) + 4,
+            borderRadius: 3,
+            background: v ? T.primary : T.soft,
+          }}
+        />
+      ))}
+    </div>
+  );
+});
+
 
 async function copy(text: string) {
   try {
@@ -2445,9 +2504,27 @@ function CalmBreathModal({
         </div>
 
         {/* Timer + controls */}
-        <div style={{ textAlign: "center", marginTop: 6 }}>
-          <div style={{ fontSize: 30, fontWeight: 800 }}>{sec}s</div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          style={{ textAlign: "center", marginTop: 6 }}
+        >
+          <div
+            style={{ fontSize: 30, fontWeight: 800 }}
+            aria-label={`${sec} seconds remaining`}
+          >
+            {sec}s
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              justifyContent: "center",
+              marginTop: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <button
               type="button"
               onClick={onProceed}
@@ -3069,12 +3146,21 @@ function MetricsDashboard() {
   const T = useT();
   const { user, logConflictResolved } = useApp();
 
+  // ---- Window toggle (7/30) ----
+  const [windowDays, setWindowDays] = React.useState<7 | 30>(30);
+  const set7 = () => setWindowDays(7);
+  const set30 = () => setWindowDays(30);
+
   const habits = user.completedHabits ?? {};
   const entries = user.journal?.entries ?? [];
   const conflictDates = user.conflictResolutions ?? [];
 
-  // Per-habit streaks
-  const perHabit = (Object.keys(HABIT_LABELS) as MicroHabitId[]).map((id) => {
+  // ---- Journal streak (consecutive days) ----
+  const jDays = React.useMemo(() => journalDays(entries), [entries]);
+  const journalStreak = React.useMemo(() => streak(jDays), [jDays]);
+
+  const perHabit = React.useMemo(() => (
+  (Object.keys(HABIT_LABELS) as MicroHabitId[]).map((id) => {
     const dates = habits[id] ?? [];
     return {
       id,
@@ -3082,33 +3168,166 @@ function MetricsDashboard() {
       todayDone: dates.includes(todayISO()),
       currentStreak: streak(dates),
       maxStreak: maxStreak(dates),
-      last7: countInLastNDays(dates, 7),
-      last30: countInLastNDays(dates, 30),
-      total: dates.length,
+      lastN: countInLastNDays(dates, windowDays),
+      series: presenceSeries(dates, windowDays),
+      total: dates.length,          // ← add this
     };
-  });
+  })
+), [habits, windowDays]);
 
-  // Journal stats
-  const journalStats = {
+  const journalStats = React.useMemo(() => ({
     total: entries.length,
     onPaper: countsBy((e) => !!e.onPaper, entries),
-    last7Days: distinctJournalDays(entries, 7),
-    last30Days: distinctJournalDays(entries, 30),
-  };
+    lastNdaysDistinct: distinctJournalDays(entries, windowDays),
+    series: presenceSeries(jDays, windowDays),
+  }), [entries, jDays, windowDays]);
 
-  // Conflict stats
-  const conflictStats = {
+  const last = (arr: string[]) => arr.length ? arr[arr.length - 1] : undefined;
+
+  const conflictStats = React.useMemo(() => ({
     totalResolved: conflictDates.length,
-    last30: countInLastNDays(conflictDates, 30),
-    lastResolvedOn: conflictDates.length ? conflictDates.slice().sort().at(-1)! : "—",
+    lastN: countInLastNDays(conflictDates, windowDays),
+    lastResolvedOn: conflictDates.length ? last(conflictDates.slice().sort())! : "—",
+  }), [conflictDates, windowDays]);
+
+  const anon = React.useMemo(() => computeAnonymizedMetrics(user), [user]);
+
+  // ---- Export helpers ----
+  const summaryForExport = {
+    windowDays,
+    generatedAt: new Date().toISOString(),
+    habits: perHabit.map((h) => ({
+      id: h.id,
+      name: h.name,
+      todayDone: h.todayDone,
+      currentStreak: h.currentStreak,
+      maxStreak: h.maxStreak,
+      lastN: h.lastN,
+      total: h.total,
+    })),
+    journaling: {
+      journalStreak,
+      total: journalStats.total,
+      onPaper: journalStats.onPaper,
+      lastNdaysDistinct: journalStats.lastNdaysDistinct,
+    },
+    conflicts: conflictStats,
+    anonymizedPreview: anon,
   };
 
-  // Anonymized rollup (same thing shown to leaders if enabled)
-  const anon = computeAnonymizedMetrics(user);
+  function downloadJSON() {
+    const blob = new Blob([JSON.stringify(summaryForExport, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `trueglue-metrics-${windowDays}d.json`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function toCSV(rows: Record<string, any>[]) {
+    if (!rows.length) return "";
+    const cols = Object.keys(rows[0]);
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    return [cols.join(","), ...rows.map(r => cols.map(c => esc(r[c])).join(","))].join("\n");
+  }
+
+  function downloadCSV() {
+    const rows = [
+      // One row per habit
+      ...perHabit.map(h => ({
+        section: "habit",
+        id: h.id,
+        name: h.name,
+        todayDone: h.todayDone,
+        currentStreak: h.currentStreak,
+        maxStreak: h.maxStreak,
+        lastN: h.lastN,
+        total: h.total,
+        windowDays,
+      })),
+      // one row for journaling
+      {
+        section: "journaling",
+        journalStreak,
+        total: journalStats.total,
+        onPaper: journalStats.onPaper,
+        lastNdaysDistinct: journalStats.lastNdaysDistinct,
+        windowDays,
+      },
+      // one row for conflicts
+      {
+        section: "conflicts",
+        totalResolved: conflictStats.totalResolved,
+        lastN: conflictStats.lastN,
+        lastResolvedOn: conflictStats.lastResolvedOn,
+        windowDays,
+      },
+    ];
+    const csv = toCSV(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `trueglue-metrics-${windowDays}d.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---- Quick weekly recap text (simple, friendly) ----
+  const weeklyRecap = (() => {
+    const topHabit = perHabit.slice().sort((a, b) => b.lastN - a.lastN)[0];
+    return [
+      `This week you journaled on ${journalStats.lastNdaysDistinct} day(s).`,
+      topHabit ? `Most active habit: ${topHabit.name} (${topHabit.lastN}/${windowDays}).` : "",
+      `Conflicts resolved: ${conflictStats.lastN} in last ${windowDays} days.`,
+    ].filter(Boolean).join(" ");
+  })();
 
   return (
     <>
-      <Card title="Habit Streaks & Counts" sub="Current vs max streaks, last 7/30 days">
+      {/* Window toggle */}
+      <Card title="Time Window">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={set7}
+            aria-pressed={windowDays === 7}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${windowDays === 7 ? T.primary : T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >Last 7 days</button>
+          <button
+            type="button"
+            onClick={set30}
+            aria-pressed={windowDays === 30}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${windowDays === 30 ? T.primary : T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >Last 30 days</button>
+        </div>
+      </Card>
+
+      {/* My Metrics (couple-facing quick summary) */}
+      <Card title="My Metrics" sub="Snapshot for this window">
+        <div style={{ display: "grid", gap: 10 }}>
+          <div><strong>Journaling streak:</strong> {journalStreak} day{journalStreak === 1 ? "" : "s"}</div>
+          <div><strong>Journal days (last {windowDays}):</strong> {journalStats.lastNdaysDistinct}</div>
+          <div><strong>Conflicts resolved (last {windowDays}):</strong> {conflictStats.lastN}</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{weeklyRecap}</div>
+        </div>
+      </Card>
+
+      {/* Habits with sparklines */}
+      <Card title="Habit Streaks & Trends" sub={`Current/max streaks • last ${windowDays} days`}>
         <div style={{ display: "grid", gap: 8 }}>
           {perHabit.map((h) => (
             <div
@@ -3127,28 +3346,29 @@ function MetricsDashboard() {
               <div>
                 <div style={{ fontWeight: 700 }}>{h.name}</div>
                 <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
-                  Today: {h.todayDone ? "✓" : "—"} • Streak {h.currentStreak} (max {h.maxStreak}) • 7d {h.last7} • 30d {h.last30} • total {h.total}
+                  Today: {h.todayDone ? "✓" : "—"} • Streak {h.currentStreak} (max {h.maxStreak}) • {windowDays}d {h.lastN} • total {h.total}
                 </div>
               </div>
-              <div aria-hidden style={{ fontSize: 20 }}>{h.todayDone ? "✅" : "○"}</div>
+              <Sparkline series={h.series} T={T} />
             </div>
           ))}
         </div>
       </Card>
 
-      <Card title="Journaling" sub="Counts only; text stays encrypted/private">
-        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-          <li>Total entries: {journalStats.total}</li>
-          <li>On paper: {journalStats.onPaper}</li>
-          <li>Distinct days with entries (last 7): {journalStats.last7Days}</li>
-          <li>Distinct days with entries (last 30): {journalStats.last30Days}</li>
-        </ul>
+      {/* Journaling with sparkline */}
+      <Card title="Journaling" sub={`Counts only; text stays encrypted/private • last ${windowDays} days`}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div>Entries total: {journalStats.total} • On paper: {journalStats.onPaper}</div>
+          <div>Distinct days with entries: {journalStats.lastNdaysDistinct}</div>
+          <div><Sparkline series={journalStats.series} T={T} /></div>
+        </div>
       </Card>
 
-      <Card title="Conflict Resolutions" sub="Simple counts by date (YYYY-MM-DD)">
+      {/* Conflicts */}
+      <Card title="Conflict Resolutions" sub={`Simple counts by date • last ${windowDays} days`}>
         <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
           <li>Total resolved: {conflictStats.totalResolved}</li>
-          <li>Resolved in last 30d: {conflictStats.last30}</li>
+          <li>Resolved in last {windowDays}d: {conflictStats.lastN}</li>
           <li>Most recent: {conflictStats.lastResolvedOn}</li>
         </ul>
         <div style={{ marginTop: 10 }}>
@@ -3170,6 +3390,43 @@ function MetricsDashboard() {
         </div>
       </Card>
 
+      {/* Export */}
+      <Card title="Export / Share" sub="Use for weekly check-ins or leader summaries">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={downloadCSV}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: `1px solid ${T.primary}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Download CSV
+          </button>
+          <button
+            type="button"
+            onClick={downloadJSON}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: `1px solid ${T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Download JSON
+          </button>
+        </div>
+      </Card>
+
+      {/* Anonymized aggregate preview (unchanged, left as-is) */}
       <Card title="Anonymized Aggregate (Preview)" sub="This is what leaders can see if you enable sharing">
         <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
           <li>Total habit completions: {anon.habitDayCount}</li>
@@ -3193,10 +3450,30 @@ function MetricsDashboard() {
 
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
-const T = useT();
-  const { user } = useApp(); // NEW
+  const T = useT();
+  const { user } = useApp();
 
-const m = computeAnonymizedMetrics(user);
+  const [windowDays, setWindowDays] = React.useState<7 | 30>(30);
+  const set7 = () => setWindowDays(7);
+  const set30 = () => setWindowDays(30);
+
+  // reuse anonymized metrics (still 30d inside computeAnonymizedMetrics),
+  // but expose export from per-user summary in this view as well.
+  const m = computeAnonymizedMetrics(user);
+
+  const summary = {
+    windowDays,
+    generatedAt: new Date().toISOString(),
+    anonymizedPreview: m,
+  };
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(summary, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `trueglue-leader-${windowDays}d.json`; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <>
@@ -3208,18 +3485,69 @@ const m = computeAnonymizedMetrics(user);
         </ul>
       </Card>
 
-{user.privacy?.allowPastorView && (
-  <Card title="Group Metrics (Anonymized)">
-    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-      <li>Total habit completions (count): {m.habitDayCount}</li>
-      <li>Total journal entries (count only): {m.journalCount}</li>
-      <li>Journal days (last 30): {m.journalDaysLast30}</li>
-    </ul>
-    <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
-      These are counts only. No names, emails, or journal text are shared.
-    </div>
-  </Card>
-)}
+      {/* Window toggle + export */}
+      <Card title="Window & Export (Leader)">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={set7}
+            aria-pressed={windowDays === 7}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${windowDays === 7 ? T.primary : T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >Last 7 days</button>
+          <button
+            type="button"
+            onClick={set30}
+            aria-pressed={windowDays === 30}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${windowDays === 30 ? T.primary : T.soft}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >Last 30 days</button>
+
+          <button
+            type="button"
+            onClick={exportJSON}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${T.primary}`,
+              background: "transparent",
+              color: T.text,
+              cursor: "pointer",
+              fontSize: 13,
+              marginLeft: 8,
+            }}
+          >
+            Export JSON
+          </button>
+        </div>
+      </Card>
+
+      {user.privacy?.allowPastorView && (
+        <Card title="Group Metrics (Anonymized)">
+          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+            <li>Total habit completions (count): {m.habitDayCount}</li>
+            <li>Total journal entries (count only): {m.journalCount}</li>
+            <li>Journal days (last 30): {m.journalDaysLast30}</li>
+          </ul>
+          <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+            These are counts only. No names, emails, or journal text are shared.
+          </div>
+        </Card>
+      )}
 
       <Card title="Acceptance Criteria (Ship-Ready)">
         <ul style={{ margin: 0, paddingLeft: 18 }}>
