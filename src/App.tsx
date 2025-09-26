@@ -1186,22 +1186,21 @@ const optionStyle: React.CSSProperties = { background: T.card, color: T.text };
         </label>
 
         <label>
-          <div style={input.label}>Life stage</div>
-          <select
-            value={form.lifeStage}
-            onChange={(e) => setForm({ ...form, lifeStage: e.currentTarget.value as any })}
-            style={input.base}
-          >
-            <option value="" disabled>Choose…</option>
-            <option value="engaged">Engaged</option>
-            <option value="newlywed">Newlywed</option>
-            <option value="raising-kids">Raising kids</option>
-            <option value="empty-nesters">Empty nesters</option>
-            <option value="single-parent">Single parent</option>
-            <option value="widowed">Widowed</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
+  <div style={input.label}>Age range</div>
+  <select
+    value={form.ageRange} // ✅ correct: bound to ageRange
+    onChange={(e) => setForm({ ...form, ageRange: e.currentTarget.value as any })}
+    style={input.base}
+  >
+    <option value="" disabled>Choose…</option>
+    <option value="18–24">18–24</option>
+    <option value="25–34">25–34</option>
+    <option value="35–44">35–44</option>
+    <option value="45–54">45–54</option>
+    <option value="55–64">55–64</option>
+    <option value="65+">65+</option>
+  </select>
+</label>
       </div>
 
       <div style={{ height: 10 }} />
