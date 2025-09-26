@@ -159,6 +159,15 @@ export const FEATURES = Object.freeze({
   lessons: true,
 });
 
+// -------------------- ONBOARDING FLAG (separate from UserState) --------------------
+const ONBOARD_KEY = "trueglue.v2.onboarding.done";
+function hasOnboarded() {
+  try { return localStorage.getItem(ONBOARD_KEY) === "1"; } catch { return false; }
+}
+function setOnboarded() {
+  try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {}
+}
+
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
 export const STORAGE_VERSION = 6;
@@ -1000,6 +1009,326 @@ function Tabs<ID extends string>({
   );
 }
 
+/** =================== WelcomeModal (first-time) =================== */
+function WelcomeModal({
+  open,
+  onStart,
+  onSkip,
+}: {
+  open: boolean;
+  onStart: () => void;
+  onSkip: () => void;
+}) {
+  const T = useT();
+  const { user } = useApp();
+  if (!open) return null;
+
+  // pick a verse from the selected topic so the welcome "matches" their VOTD
+const dayIndex = localDaySeed();
+
+// Safely choose a topic from user state, fall back to "unity"
+const candidate = user?.selectedVerseTopic as string | undefined;
+const topic: VerseTopic =
+  candidate && candidate in SeedVersesByTopic ? (candidate as VerseTopic) : "unity";
+
+const verses = SeedVersesByTopic[topic] ?? [];
+const v = verses.length ? verses[randIndex(verses, dayIndex)] : null;
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "grid", placeItems: "center",
+      zIndex: 2147483647, padding: 16
+    }}>
+      <div style={{
+        maxWidth: 640, width: "100%", background: T.card, color: T.text, border: `1px solid ${T.soft}`,
+        borderRadius: 16, boxShadow: T.shadow, padding: 18
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Welcome to TrueGlue</h3>
+          <button
+            type="button"
+            onClick={onSkip}
+            style={{
+              padding: "8px 12px", borderRadius: 10, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Skip for now
+          </button>
+        </div>
+
+        <p style={{ marginTop: 8, color: T.muted }}>
+          Gospel-centered tools for everyday marriage. Let’s take a 60-second tour.
+        </p>
+
+        {v ? (
+          <div style={{ marginTop: 10, borderTop: `1px solid ${T.soft}`, paddingTop: 10 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Today’s Scripture</div>
+            <blockquote style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>{v.text}</blockquote>
+            <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={onStart}
+            style={{
+              padding: "10px 14px", borderRadius: 999, border: `1px solid ${T.primary}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13, fontWeight: 700
+            }}
+          >
+            Start tour
+          </button>
+
+          <button
+            type="button"
+            onClick={onSkip}
+            style={{
+              padding: "10px 14px", borderRadius: 999, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Skip for now
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** =================== OnboardingTour (5-step, ID-anchored) =================== */
+function OnboardingTour({ open, onClose, setRoute }: {
+  open: boolean; onClose: () => void; setRoute: (r: TGRoute) => void;
+}) {
+  const T = useT();
+  const steps: Array<{
+    targetId: string;
+    title: string;
+    text: string;
+    route?: TGRoute;
+  }> = [
+    { targetId: "tab-home",        title: "Home",          text: "See your Verse of the Day, short commentary, and helpful suggestions.", route: "home" },
+    { targetId: "tab-microhabits", title: "Micro-Habits",  text: "Small daily actions (gratitude, love map, prayer, calm timer, journal).", route: "microhabits" },
+    { targetId: "tab-workflow",    title: "Conflict Flow", text: "A guided, biblical path for tough moments—repair with clarity and grace.", route: "workflow" },
+    { targetId: "tab-metrics",     title: "Metrics",       text: "Track streaks and trends (counts only). Export CSV/JSON for weekly reviews.", route: "metrics" },
+    { targetId: "tab-profile",     title: "Profile",       text: "Set reminders, privacy & PIN, and personalize your experience.", route: "profile" },
+  ];
+
+  const [i, setI] = React.useState(0);
+  const [box, setBox] = React.useState<{x:number;y:number;w:number;h:number} | null>(null);
+  const bubbleRef = React.useRef<HTMLDivElement>(null);
+  const [bubbleSize, setBubbleSize] = React.useState<{w:number;h:number}>({ w: 0, h: 0 });
+
+  React.useEffect(() => {
+    if (!open) return;
+    const r = steps[i].route;
+    if (r) setRoute(r);
+    const t = window.setTimeout(measureTarget, 50);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, i]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const on = () => { measureTarget(); measureBubble(); };
+    window.addEventListener("resize", on);
+    window.addEventListener("scroll", on, true);
+    return () => {
+      window.removeEventListener("resize", on);
+      window.removeEventListener("scroll", on, true);
+    };
+  }, [open]);
+
+  React.useLayoutEffect(() => {
+  if (!open) return;
+  measureBubble();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [open, i, steps[i].text]);
+
+  function measureTarget() {
+    const el = document.getElementById(steps[i].targetId);
+    if (!el) { setBox(null); return; }
+    const r = el.getBoundingClientRect();
+    setBox({ x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height });
+    try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+  }
+
+  function measureBubble() {
+    const b = bubbleRef.current?.getBoundingClientRect();
+    if (b) setBubbleSize({ w: b.width, h: b.height });
+  }
+
+  function next() { i < steps.length - 1 ? setI(i + 1) : onClose(); }
+  function prev() { if (i > 0) setI(i - 1); }
+
+  if (!open) return null;
+
+  // --- Compute final bubble position (never overlaps the target) ---
+const gap = 12;
+const bubbleW = Math.min(380, window.innerWidth - 32);  // keep bubble inside 16px gutters
+const vpLeft = window.scrollX + 16;
+const vpRight = window.scrollX + window.innerWidth - 16;
+
+let bubbleTop = 32;
+let bubbleLeft = 16;
+let placedAbove = false;         // track where the bubble sits (for arrow direction)
+let arrowXWithinBubble = 24;     // px from bubble's left edge where the arrow should sit
+
+if (box) {
+  // Prefer above if there's enough room in the *viewport* above the target
+  const roomAbove = (box.y - window.scrollY);
+  const roomBelow = (window.scrollY + window.innerHeight) - (box.y + box.h);
+  placedAbove = roomAbove > roomBelow && roomAbove > (bubbleSize.h + gap + 16);
+
+  const topIfAbove = box.y - bubbleSize.h - gap;
+  const topIfBelow = box.y + box.h + gap;
+  bubbleTop = Math.max(16, placedAbove ? topIfAbove : topIfBelow);
+
+  // Center bubble to the target's center, but clamp within viewport
+  const centerX = box.x + box.w / 2;
+  bubbleLeft = Math.min(vpRight - bubbleW, Math.max(vpLeft, centerX - bubbleW / 2));
+
+  // Arrow anchor: keep it visually pointing at the target center
+  // Compute where the target center lands *relative to bubble's left*
+  arrowXWithinBubble = Math.round(centerX - bubbleLeft);
+
+  // Clamp arrow within bubble’s padding so it doesn’t draw outside
+  const arrowMargin = 18;
+  arrowXWithinBubble = Math.max(arrowMargin, Math.min(bubbleW - arrowMargin, arrowXWithinBubble));
+}
+// --- end placement calc ---
+const step = steps[i];
+
+  return createPortal(
+    <div
+      role="dialog" aria-modal="true" aria-label="App tour"
+      style={{ position: "fixed", inset: 0, zIndex: 2147483647, pointerEvents: "none" }}
+    >
+      {/* dim background */}
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)" }} />
+
+      {/* highlight box */}
+      {box && (
+        <div aria-hidden
+          style={{
+            position: "absolute",
+            left: box.x - 6, top: box.y - 6, width: box.w + 12, height: box.h + 12,
+            borderRadius: 10, border: `2px solid ${T.accent}`,
+            boxShadow: "0 0 0 9999px rgba(0,0,0,.55)",
+            pointerEvents: "none"
+          }}
+        />
+      )}
+
+      {/* measured bubble */}
+      <div
+  ref={bubbleRef}
+  style={{
+    position: "absolute",
+    top: bubbleTop,
+    left: bubbleLeft,
+    width: bubbleW,
+    background: T.card,
+    color: T.text,
+    border: `1px solid ${T.soft}`,
+    borderRadius: 14,
+    boxShadow: T.shadow,
+    padding: 12,
+    pointerEvents: "auto",
+  }}
+>
+  {/* Arrow: two layered triangles (outer = border, inner = card) */}
+  {/* OUTER (gives a clean border edge) */}
+  <div
+    aria-hidden
+    style={{
+      position: "absolute",
+      left: arrowXWithinBubble - 9, // center of 18px-wide triangle
+      ...(placedAbove
+        ? { bottom: -10, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `10px solid ${T.soft}` }
+        : { top: -10,    borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: `10px solid ${T.soft}` }
+      ),
+      width: 0, height: 0,
+    }}
+  />
+  {/* INNER (fills with card color so arrow matches bubble) */}
+  <div
+    aria-hidden
+    style={{
+      position: "absolute",
+      left: arrowXWithinBubble - 8,
+      ...(placedAbove
+        ? { bottom: -8, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: `8px solid ${T.card}` }
+        : { top: -8,    borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: `8px solid ${T.card}` }
+      ),
+      width: 0, height: 0,
+    }}
+  />
+
+  <div style={{ fontWeight: 800 }}>{step.title}</div>
+  <div style={{ marginTop: 6, lineHeight: 1.5 }}>{step.text}</div>
+
+  <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 8 }}>
+      <button
+        type="button"
+        onClick={onClose}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: `1px solid ${T.soft}`,
+          background: "transparent",
+          color: T.text,
+          cursor: "pointer",
+          fontSize: 13,
+        }}
+      >
+        Skip tour
+      </button>
+      <button
+        type="button"
+        onClick={prev}
+        disabled={i === 0}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: `1px solid ${i === 0 ? T.soft : T.primary}`,
+          background: "transparent",
+          color: T.text,
+          cursor: i === 0 ? "default" : "pointer",
+          fontSize: 13,
+          opacity: i === 0 ? 0.6 : 1,
+        }}
+      >
+        Back
+      </button>
+    </div>
+
+    <button
+      type="button"
+      onClick={next}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 999,
+        border: `1px solid ${T.primary}`,
+        background: "transparent",
+        color: T.text,
+        cursor: "pointer",
+        fontSize: 13,
+        fontWeight: 700,
+      }}
+    >
+      {i === steps.length - 1 ? "Finish" : "Next"}
+    </button>
+  </div>
+</div>
+    </div>,
+    document.body
+  );
+}
+
 /* -------------------- ROOT -------------------- */
 export default function App() {
   return (
@@ -1032,6 +1361,53 @@ const appStyle: React.CSSProperties = {
 
   const [user, setUser] = useState<UserState>(() => loadState());
   const [route, setRoute] = useState<TGRoute>(initialRoute);
+
+// Onboarding state
+const [showWelcome, setShowWelcome] = useState(false);
+const [showTour, setShowTour] = useState(false);
+
+// Debug helpers: call from DevTools console
+// window.tgOpenTour()      → opens the tour immediately
+// window.tgResetOnboarding → re-opens Welcome, clears the done flag
+// window.tgFinishOnboarding→ marks onboarding done (skips welcome)
+if (typeof window !== "undefined") {
+  (window as any).tgOpenTour = () => {
+    setShowWelcome(false);
+    setShowTour(true);
+  };
+  (window as any).tgResetOnboarding = () => {
+    try { localStorage.removeItem("trueglue.v2.onboarding.done"); } catch {}
+    setShowWelcome(true);
+    setShowTour(false);
+  };
+  (window as any).tgFinishOnboarding = () => {
+    try { localStorage.setItem("trueglue.v2.onboarding.done", "1"); } catch {}
+    setShowWelcome(false);
+    setShowTour(false);
+  };
+}
+
+useEffect(() => {
+  if (typeof window !== "undefined" && !hasOnboarded()) {
+    setShowWelcome(true);
+  }
+}, []);
+
+function startTour() {
+  setShowWelcome(false);
+  setShowTour(true);
+}
+function dismissOnboarding() {
+  setShowWelcome(false);
+  setShowTour(false);
+  setOnboarded();
+  toast("Onboarding dismissed");
+}
+function finishTour() {
+  setShowTour(false);
+  setOnboarded();
+  toast("You’re all set! 🙌");
+}
 
   useEffect(() => {
   const id = window.setTimeout(() => saveState(user), 200);
@@ -1163,10 +1539,26 @@ useEffect(() => {
           </header>
 
           <Ctx.Provider value={api}>
-            <AppTabs route={route} setRoute={setRoute} />
-          </Ctx.Provider>
+  <AppTabs route={route} setRoute={setRoute} />
 
-          <Footer />
+  {/* First-time welcome (scripture + encouragement) */}
+  <WelcomeModal
+  open={showWelcome}
+  onStart={startTour}
+  onSkip={dismissOnboarding}
+  topic={user.selectedVerseTopic}
+/>
+
+  {/* 5-step guided tour (highlights existing tabs by id) */}
+  <OnboardingTour
+    open={showTour}
+    onClose={finishTour}
+    setRoute={setRoute}
+  />
+</Ctx.Provider>
+
+<Footer />
+
         </div>
       </div>
     </>
