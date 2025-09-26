@@ -115,12 +115,28 @@ export type MicroHabitId =
   | "calmBreath"
   | "journal"; // NEW
 
+type LifeStage = "engaged" | "newlywed" | "parenting" | "emptyNest" | "blended" | "retired";
+type KidsStage = "none" | "infant" | "elementary" | "teen" | "adult";
+
 type UserProfile = {
   displayName?: string;
   email?: string;
   spouseName?: string;
   anniversary?: string; // YYYY-MM-DD
   church?: string;
+
+  // NEW personalization fields gathered during onboarding:
+  ageRange?: "18–24" | "25–34" | "35–44" | "45–54" | "55–64" | "65+";
+  lifeStage?: "engaged" | "newlywed" | "raising-kids" | "empty-nesters" | "single-parent" | "widowed" | "other";
+  kidsCount?: number;       // total # of kids
+  yearsMarried?: number;    // approximate
+};
+
+type Couple = {
+  id: string;              // shared couple id (local placeholder; will be Supabase id later)
+  inviteCode?: string;     // generated share code the other device can use
+  spouseEmail?: string;    // optional: for future email invite
+  joinedAt?: number;       // timestamp when both accepted
 };
 
 // ==== Journaling types (optional; works without migrations) ====
@@ -168,9 +184,35 @@ function setOnboarded() {
   try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {}
 }
 
+// ---- New intro flag (separate from the old "welcome" gate) ----
+const INTRO_KEY = "trueglue.v2.onboarding.intro.done";
+function hasIntroDone() {
+  try { return localStorage.getItem(INTRO_KEY) === "1"; } catch { return false; }
+}
+function setIntroDone() {
+  try { localStorage.setItem(INTRO_KEY, "1"); } catch {}
+}
+
+// ---- tiny query param helpers (work with hash routing + ?query) ----
+function getQueryParam(name: string): string | null {
+  const q = (typeof window !== "undefined" ? window.location.href : "").split("?")[1] || "";
+  const params = new URLSearchParams(q);
+  return params.get(name);
+}
+
+function setQueryParam(name: string, value?: string | null) {
+  if (typeof window === "undefined") return;
+  const [base, search] = window.location.href.split("?");
+  const params = new URLSearchParams(search || "");
+  if (value == null) params.delete(name);
+  else params.set(name, value);
+  const next = params.toString() ? `${base}?${params.toString()}` : base;
+  window.history.replaceState({}, "", next);
+}
+
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
-export const STORAGE_VERSION = 6;
+export const STORAGE_VERSION = 7;
 
 // === Conflict Styles (NEW) ===
 type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
@@ -199,6 +241,9 @@ export type UserState = {
 
   // NEW — Privacy (optional; default provided in load/migrate)
   privacy?: PrivacyPrefs;
+
+// NEW
+  couple?: Couple;
 };
 
 // ===== Defaults for new fields =====
@@ -226,6 +271,7 @@ function DEFAULT_USER_FROM(old: any, overrides: Partial<UserState> = {}): UserSt
     profile: old.profile ?? undefined,
     journal: old.journal ?? DEFAULT_JOURNAL,
     privacy: old.privacy ?? DEFAULT_PRIVACY,
+    couple: old.couple ?? undefined,           // <-- add this line
     ...overrides,
   };
 }
@@ -1009,88 +1055,290 @@ function Tabs<ID extends string>({
   );
 }
 
-/** =================== WelcomeModal (first-time) =================== */
-function WelcomeModal({
+/** =================== OnboardingIntro (multi-card; writes to profile) =================== */
+function OnboardingIntro({
   open,
-  onStart,
-  onSkip,
+  onFinish,
+  onSkipAll,
 }: {
   open: boolean;
-  onStart: () => void;
-  onSkip: () => void;
+  onFinish: () => void;
+  onSkipAll: () => void;
 }) {
   const T = useT();
-  const { user } = useApp();
+  const { user, setUser } = useApp();
+  const [step, setStep] = React.useState(0);
+  const total = 3;
+
+  // local form state seeded from existing profile
+  const [form, setForm] = React.useState<Required<Pick<UserProfile,
+    "displayName" | "spouseName" | "email" | "ageRange" | "lifeStage" | "kidsCount" | "yearsMarried"
+  >> & { church?: string }>({
+    displayName: user.profile?.displayName ?? "",
+    spouseName:  user.profile?.spouseName  ?? "",
+    email:       user.profile?.email       ?? "",
+    ageRange:    (user.profile?.ageRange ?? "") as any,
+    lifeStage:   (user.profile?.lifeStage ?? "") as any,
+    kidsCount:   user.profile?.kidsCount ?? 0,
+    yearsMarried:user.profile?.yearsMarried ?? 0,
+    church:      user.profile?.church ?? "",
+  });
+
+  // readable selects in both themes (closed state)
+  const input = {
+    base: {
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 10,
+      border: `1px solid ${T.soft}`,
+      background: T.card,       // solid background so text is visible
+      color: T.text,            // readable in both themes
+      fontSize: 14,
+    } as React.CSSProperties,
+    label: { fontSize: 13, color: T.muted, marginBottom: 6 } as React.CSSProperties,
+    row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } as React.CSSProperties,
+  };
+
+const optionStyle: React.CSSProperties = { background: T.card, color: T.text };
+
   if (!open) return null;
 
-  // pick a verse from the selected topic so the welcome "matches" their VOTD
-const dayIndex = localDaySeed();
+  function saveProfileAndFinish() {
+    const next: UserState = {
+      ...user,
+      profile: {
+        ...(user.profile ?? {}),
+        displayName: form.displayName.trim() || undefined,
+        spouseName:  form.spouseName.trim()  || undefined,
+        email:       form.email.trim()       || undefined,
+        church:      form.church?.trim()     || undefined,
+        ageRange:    form.ageRange || undefined,
+        lifeStage:   form.lifeStage || undefined,
+        kidsCount:   Number.isFinite(form.kidsCount) ? form.kidsCount : undefined,
+        yearsMarried:Number.isFinite(form.yearsMarried) ? form.yearsMarried : undefined,
+      },
+    };
+    setUser(next);     // ← persists via your existing save effect
+    onFinish();        // ← parent opens the tour next
+  }
 
-// Safely choose a topic from user state, fall back to "unity"
-const candidate = user?.selectedVerseTopic as string | undefined;
-const topic: VerseTopic =
-  candidate && candidate in SeedVersesByTopic ? (candidate as VerseTopic) : "unity";
+  const Step1 = (
+    <>
+      <p style={{ marginTop: 0 }}>
+        Welcome to <strong>TrueGlue</strong> — gospel-centered tools for everyday marriage.
+      </p>
+      <div style={input.row}>
+        <label>
+          <div style={input.label}>Your name</div>
+          <input
+            type="text"
+            value={form.displayName}
+            onChange={(e) => setForm({ ...form, displayName: e.currentTarget.value })}
+            style={input.base}
+            placeholder="e.g., Ryan"
+          />
+        </label>
+        <label>
+          <div style={input.label}>Spouse name</div>
+          <input
+            type="text"
+            value={form.spouseName}
+            onChange={(e) => setForm({ ...form, spouseName: e.currentTarget.value })}
+            style={input.base}
+            placeholder="e.g., Taylor"
+          />
+        </label>
+      </div>
 
-const verses = SeedVersesByTopic[topic] ?? [];
-const v = verses.length ? verses[randIndex(verses, dayIndex)] : null;
+      <div style={{ height: 10 }} />
+      <label>
+        <div style={input.label}>Email (optional)</div>
+        <input
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.currentTarget.value })}
+          style={input.base}
+          placeholder="you@example.com"
+        />
+      </label>
+    </>
+  );
+
+  const Step2 = (
+    <>
+      <div style={input.row}>
+        <label>
+          <div style={input.label}>Age range</div>
+          <select
+  value={form.lifeStage}
+  onChange={(e) => setForm({ ...form, lifeStage: e.currentTarget.value as any })}
+  style={input.base}
+>
+  <option value="" disabled style={optionStyle}>Choose…</option>
+  <option value="engaged"        style={optionStyle}>Engaged</option>
+  <option value="newlywed"       style={optionStyle}>Newlywed</option>
+  <option value="raising-kids"   style={optionStyle}>Raising kids</option>
+  <option value="empty-nesters"  style={optionStyle}>Empty nesters</option>
+  <option value="single-parent"  style={optionStyle}>Single parent</option>
+  <option value="widowed"        style={optionStyle}>Widowed</option>
+  <option value="other"          style={optionStyle}>Other</option>
+</select>
+        </label>
+
+        <label>
+          <div style={input.label}>Life stage</div>
+          <select
+            value={form.lifeStage}
+            onChange={(e) => setForm({ ...form, lifeStage: e.currentTarget.value as any })}
+            style={input.base}
+          >
+            <option value="" disabled>Choose…</option>
+            <option value="engaged">Engaged</option>
+            <option value="newlywed">Newlywed</option>
+            <option value="raising-kids">Raising kids</option>
+            <option value="empty-nesters">Empty nesters</option>
+            <option value="single-parent">Single parent</option>
+            <option value="widowed">Widowed</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+      </div>
+
+      <div style={{ height: 10 }} />
+      <div style={input.row}>
+  {/* Kids (count) as a select */}
+  <label>
+    <div style={input.label}>Kids</div>
+    <select
+      value={String(form.kidsCount ?? 0)}
+      onChange={(e) => setForm({ ...form, kidsCount: Number(e.currentTarget.value) })}
+      style={input.base}
+    >
+      <option value="0" style={optionStyle}>0</option>
+      <option value="1" style={optionStyle}>1</option>
+      <option value="2" style={optionStyle}>2</option>
+      <option value="3" style={optionStyle}>3</option>
+      <option value="4" style={optionStyle}>4</option>
+      <option value="5" style={optionStyle}>5</option>
+      <option value="6" style={optionStyle}>6+</option>
+    </select>
+  </label>
+
+  {/* Years married as a select (stores numeric buckets) */}
+  <label>
+    <div style={input.label}>Years married</div>
+    <select
+      value={String(form.yearsMarried ?? 0)}
+      onChange={(e) => setForm({ ...form, yearsMarried: Number(e.currentTarget.value) })}
+      style={input.base}
+    >
+      <option value="0"  style={optionStyle}>0</option>
+      <option value="1"  style={optionStyle}>1</option>
+      <option value="2"  style={optionStyle}>2</option>
+      <option value="3"  style={optionStyle}>3</option>
+      <option value="4"  style={optionStyle}>4</option>
+      <option value="5"  style={optionStyle}>5</option>
+      <option value="6"  style={optionStyle}>6</option>
+      <option value="7"  style={optionStyle}>7</option>
+      <option value="8"  style={optionStyle}>8</option>
+      <option value="9"  style={optionStyle}>9</option>
+      <option value="10" style={optionStyle}>10</option>
+      <option value="15" style={optionStyle}>15</option>
+      <option value="20" style={optionStyle}>20</option>
+      <option value="25" style={optionStyle}>25</option>
+      <option value="30" style={optionStyle}>30+</option>
+    </select>
+  </label>
+</div>
+    </>
+  );
+
+  const Step3 = (
+    <>
+      <p style={{ marginTop: 0 }}>
+        You’re all set. We’ll personalize prompts (and future content) using what you shared.
+      </p>
+      <label>
+        <div style={input.label}>Church (optional)</div>
+        <input
+          type="text"
+          value={form.church ?? ""}
+          onChange={(e) => setForm({ ...form, church: e.currentTarget.value })}
+          style={input.base}
+          placeholder="e.g., Redemption Church"
+        />
+      </label>
+      <p style={{ fontSize: 12, color: T.muted, marginTop: 8 }}>
+        Your data stays on this device. You can change these in Profile anytime.
+      </p>
+    </>
+  );
+
+  const body = [Step1, Step2, Step3][step];
 
   return createPortal(
     <div role="dialog" aria-modal="true" style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "grid", placeItems: "center",
-      zIndex: 2147483647, padding: 16
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)",
+      display: "grid", placeItems: "center", zIndex: 2147483647, padding: 16
     }}>
       <div style={{
-        maxWidth: 640, width: "100%", background: T.card, color: T.text, border: `1px solid ${T.soft}`,
-        borderRadius: 16, boxShadow: T.shadow, padding: 18
+        maxWidth: 680, width: "100%", background: T.card, color: T.text,
+        border: `1px solid ${T.soft}`, borderRadius: 16, boxShadow: T.shadow, padding: 18
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-          <h3 style={{ margin: 0 }}>Welcome to TrueGlue</h3>
+          <h3 style={{ margin: 0 }}>Welcome</h3>
           <button
             type="button"
-            onClick={onSkip}
+            onClick={onSkipAll}
             style={{
               padding: "8px 12px", borderRadius: 10, border: `1px solid ${T.soft}`,
               background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
             }}
           >
-            Skip for now
+            Skip
           </button>
         </div>
 
-        <p style={{ marginTop: 8, color: T.muted }}>
-          Gospel-centered tools for everyday marriage. Let’s take a 60-second tour.
-        </p>
+        <div style={{ marginTop: 12 }}>{body}</div>
 
-        {v ? (
-          <div style={{ marginTop: 10, borderTop: `1px solid ${T.soft}`, paddingTop: 10 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Today’s Scripture</div>
-            <blockquote style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>{v.text}</blockquote>
-            <div style={{ marginTop: 6, color: T.muted }}>{v.ref}</div>
-          </div>
-        ) : null}
-
-        <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "space-between" }}>
           <button
             type="button"
-            onClick={onStart}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0}
             style={{
-              padding: "10px 14px", borderRadius: 999, border: `1px solid ${T.primary}`,
-              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13, fontWeight: 700
+              padding: "8px 12px", borderRadius: 999,
+              border: `1px solid ${step === 0 ? T.soft : T.primary}`,
+              background: "transparent", color: T.text,
+              cursor: step === 0 ? "default" : "pointer", fontSize: 13, opacity: step === 0 ? .6 : 1
             }}
           >
-            Start tour
+            Back
           </button>
 
-          <button
-            type="button"
-            onClick={onSkip}
-            style={{
-              padding: "10px 14px", borderRadius: 999, border: `1px solid ${T.soft}`,
-              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
-            }}
-          >
-            Skip for now
-          </button>
+          {step < total - 1 ? (
+            <button
+              type="button"
+              onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
+              style={{
+                padding: "8px 14px", borderRadius: 999, border: `1px solid ${T.primary}`,
+                background: "transparent", color: T.text, cursor: "pointer", fontSize: 13, fontWeight: 700
+              }}
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={saveProfileAndFinish}
+              style={{
+                padding: "8px 14px", borderRadius: 999, border: `1px solid ${T.primary}`,
+                background: "transparent", color: T.text, cursor: "pointer", fontSize: 13, fontWeight: 700
+              }}
+            >
+              Finish
+            </button>
+          )}
         </div>
       </div>
     </div>,
@@ -1363,8 +1611,8 @@ const appStyle: React.CSSProperties = {
   const [route, setRoute] = useState<TGRoute>(initialRoute);
 
 // Onboarding state
-const [showWelcome, setShowWelcome] = useState(false);
 const [showTour, setShowTour] = useState(false);
+const [showIntro, setShowIntro] = React.useState(false);
 
 // Debug helpers: call from DevTools console
 // window.tgOpenTour()      → opens the tour immediately
@@ -1372,37 +1620,59 @@ const [showTour, setShowTour] = useState(false);
 // window.tgFinishOnboarding→ marks onboarding done (skips welcome)
 if (typeof window !== "undefined") {
   (window as any).tgOpenTour = () => {
-    setShowWelcome(false);
     setShowTour(true);
   };
   (window as any).tgResetOnboarding = () => {
     try { localStorage.removeItem("trueglue.v2.onboarding.done"); } catch {}
-    setShowWelcome(true);
+    try { localStorage.removeItem("trueglue.v2.intro.done"); } catch {}
+    setShowIntro(true);
     setShowTour(false);
   };
   (window as any).tgFinishOnboarding = () => {
     try { localStorage.setItem("trueglue.v2.onboarding.done", "1"); } catch {}
-    setShowWelcome(false);
     setShowTour(false);
   };
 }
 
 useEffect(() => {
-  if (typeof window !== "undefined" && !hasOnboarded()) {
-    setShowWelcome(true);
-  }
+  if (typeof window === "undefined") return;
+  const join = getQueryParam("join");
+  if (!join) return;
+
+  // naive acceptance: if codes match (or you have no couple yet), set the couple id
+  setUser((u) => {
+    const myCouple = u.couple ?? { id: Math.random().toString(36).slice(2) };
+    // Accept if the code matches our invite or we don't have one yet
+    const accepted = !myCouple.inviteCode || myCouple.inviteCode === join;
+    if (accepted) {
+      return { ...u, couple: { ...myCouple, inviteCode: join, joinedAt: Date.now() } };
+    }
+    return u;
+  });
+
+  setQueryParam("join", null);
+  toast("Joined couple (local)");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
-function startTour() {
-  setShowWelcome(false);
-  setShowTour(true);
-}
-function dismissOnboarding() {
-  setShowWelcome(false);
-  setShowTour(false);
-  setOnboarded();
-  toast("Onboarding dismissed");
-}
+useEffect(() => {
+  if (typeof window === "undefined") return;
+
+  const forceIntro   = getQueryParam("intro") === "1";
+  const forceWelcome = getQueryParam("welcome") === "1"; // legacy → map to intro
+  const forceTour    = getQueryParam("tour") === "1";
+
+  if (forceIntro || forceWelcome) {
+    setShowIntro(true);
+  } else if (!hasIntroDone()) {
+    setShowIntro(true);
+  } else if (!hasOnboarded()) {
+    setShowTour(true);
+  }
+
+  if (forceTour) setShowTour(true);
+}, []);
+
 function finishTour() {
   setShowTour(false);
   setOnboarded();
@@ -1541,13 +1811,20 @@ useEffect(() => {
           <Ctx.Provider value={api}>
   <AppTabs route={route} setRoute={setRoute} />
 
-  {/* First-time welcome (scripture + encouragement) */}
-  <WelcomeModal
-  open={showWelcome}
-  onStart={startTour}
-  onSkip={dismissOnboarding}
-  topic={user.selectedVerseTopic}
-/>
+  <OnboardingIntro
+    open={showIntro}
+    onFinish={() => {
+      setShowIntro(false);
+      setOnboarded();     // also mark old flag so the old welcome doesn’t pop unintentionally
+      setShowTour(true);  // jump into the guided tab tour next
+      setQueryParam("intro", null);
+    }}
+    onSkipAll={() => {
+      setShowIntro(false);
+      setQueryParam("intro", null);
+      setShowWelcome(true); // optional: show your existing welcome if they skipped the intro
+    }}
+  />
 
   {/* 5-step guided tour (highlights existing tabs by id) */}
   <OnboardingTour
@@ -2100,6 +2377,81 @@ function Lessons() {
   );
 }
 
+function InviteSpouseModal({
+  open, onClose,
+}: { open: boolean; onClose: () => void }) {
+  const T = useT();
+  const toast = useToast();
+  const { user, setUser } = useApp();
+
+  if (!open) return null;
+
+  const code = user.couple?.inviteCode ?? Math.random().toString(36).slice(2, 8).toUpperCase();
+  const coupleId = user.couple?.id ?? Math.random().toString(36).slice(2);
+
+  const link = `${location.origin}${location.pathname}#/home?join=${code}`;
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "grid", placeItems: "center", zIndex: 2147483647, padding: 16
+    }}>
+      <div style={{
+        maxWidth: 640, width: "100%", background: T.card, border: `1px solid ${T.soft}`,
+        borderRadius: 14, boxShadow: T.shadow, color: T.text, padding: 16
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Invite your spouse</h3>
+          <button type="button" onClick={onClose} style={{
+            padding: "8px 12px", borderRadius: 10, border: `1px solid ${T.soft}`,
+            background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+          }}>Close</button>
+        </div>
+
+        <p style={{ marginTop: 8, color: T.muted }}>
+          Share this link with your spouse. When they open it, your apps will share a local “couple id”.
+          (Cloud sync comes later.)
+        </p>
+
+        <div style={{
+          border: `1px solid ${T.soft}`, borderRadius: 8, padding: 10, wordBreak: "break-all", background: "transparent", color: T.text
+        }}>
+          {link}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard?.writeText(link).then(() => toast("Copied")).catch(() => {});
+            }}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.primary}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Copy link
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setUser({ ...user, couple: { id: coupleId, inviteCode: code, joinedAt: user.couple?.joinedAt } });
+              toast("Invite ready");
+            }}
+            style={{
+              padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.soft}`,
+              background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+            }}
+          >
+            Generate code
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // === Assessment (NEW) — multi-question conflict style flow ===
 function Assessment({
   onClose,
@@ -2222,17 +2574,37 @@ function Assessment({
 
 /* -------------------- PROFILE -------------------- */
 function Profile() {
+  const [openInvite, setOpenInvite] = React.useState(false);
   const T = useT();
   const { user, setUser } = useApp();
 
   // Initialize form from saved profile or defaults
   const [form, setForm] = React.useState<UserProfile>(() => ({
-    displayName: user.profile?.displayName ?? "",
-    email:       user.profile?.email ?? "",
-    spouseName:  user.profile?.spouseName ?? "",
-    anniversary: user.profile?.anniversary ?? "",
-    church:      user.profile?.church ?? "",
-  }));
+  displayName:  user.profile?.displayName ?? "",
+  email:        user.profile?.email ?? "",
+  spouseName:   user.profile?.spouseName ?? "",
+  anniversary:  user.profile?.anniversary ?? "",
+  church:       user.profile?.church ?? "",
+  ageRange:     user.profile?.ageRange ?? "",
+  lifeStage:    user.profile?.lifeStage ?? "",
+  kidsCount:    user.profile?.kidsCount ?? 0,
+  yearsMarried: user.profile?.yearsMarried ?? 0,
+}));
+
+// Keep the local form in sync with user.profile whenever it changes
+React.useEffect(() => {
+  setForm({
+    displayName:  user.profile?.displayName ?? "",
+    email:        user.profile?.email ?? "",
+    spouseName:   user.profile?.spouseName ?? "",
+    anniversary:  user.profile?.anniversary ?? "",
+    church:       user.profile?.church ?? "",
+    ageRange:     user.profile?.ageRange ?? "",
+    lifeStage:    user.profile?.lifeStage ?? "",
+    kidsCount:    user.profile?.kidsCount ?? 0,
+    yearsMarried: user.profile?.yearsMarried ?? 0,
+  });
+}, [user.profile]);
 
   const [saved, setSaved] = React.useState(false);
 
@@ -2327,6 +2699,70 @@ function Profile() {
               placeholder="e.g., Redemption Church"
             />
           </label>
+
+{/* NEW: Personalization fields reflected on Profile */}
+<div style={rowStyle}>
+  <label>
+    <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Age range</div>
+    <select
+      value={form.ageRange ?? ""}
+      onChange={(e) => update("ageRange", e.currentTarget.value as any)}
+      style={{ ...inputStyle, background: T.card }}   // solid bg so text is visible
+    >
+      <option value="" disabled>Choose…</option>
+      <option value="18–24">18–24</option>
+      <option value="25–34">25–34</option>
+      <option value="35–44">35–44</option>
+      <option value="45–54">45–54</option>
+      <option value="55–64">55–64</option>
+      <option value="65+">65+</option>
+    </select>
+  </label>
+
+  <label>
+    <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Life stage</div>
+    <select
+      value={form.lifeStage ?? ""}
+      onChange={(e) => update("lifeStage", e.currentTarget.value as any)}
+      style={{ ...inputStyle, background: T.card }}   // solid bg so text is visible
+    >
+      <option value="" disabled>Choose…</option>
+      <option value="engaged">Engaged</option>
+      <option value="newlywed">Newlywed</option>
+      <option value="raising-kids">Raising kids</option>
+      <option value="empty-nesters">Empty nesters</option>
+      <option value="single-parent">Single parent</option>
+      <option value="widowed">Widowed</option>
+      <option value="other">Other</option>
+    </select>
+  </label>
+</div>
+
+<div style={rowStyle}>
+  <label>
+    <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Kids</div>
+    <input
+      type="number"
+      min={0}
+      value={form.kidsCount ?? 0}
+      onChange={(e) => update("kidsCount", Number(e.currentTarget.value || 0) as any)}
+      style={{ ...inputStyle, background: T.card }}   // optional: match select bg
+      placeholder="0"
+    />
+  </label>
+
+  <label>
+    <div style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>Years married</div>
+    <input
+      type="number"
+      min={0}
+      value={form.yearsMarried ?? 0}
+      onChange={(e) => update("yearsMarried", Number(e.currentTarget.value || 0) as any)}
+      style={{ ...inputStyle, background: T.card }}   // optional: match select bg
+      placeholder="0"
+    />
+  </label>
+</div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <button
@@ -2503,6 +2939,28 @@ onChange={(e) =>
 </div> {/* end PIN & auto-lock section */}
 </div> {/* end grid container inside Privacy card */}
 </Card> {/* end Privacy & Sharing card */}
+
+<Card title="Invite your spouse" sub="Share your couple space (local for now)">
+  <div style={{ display: "flex", gap: 8 }}>
+    <button
+      type="button"
+      onClick={() => setOpenInvite(true)}
+      style={{
+        padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.primary}`,
+        background: "transparent", color: T.text, cursor: "pointer", fontSize: 13
+      }}
+    >
+      Open invite
+    </button>
+    {user.couple?.id && (
+      <div style={{ alignSelf: "center", fontSize: 12, color: T.muted }}>
+        Couple ID: {user.couple.id.slice(0, 8)}…
+      </div>
+    )}
+  </div>
+</Card>
+
+<InviteSpouseModal open={openInvite} onClose={() => setOpenInvite(false)} />
 
       {/* NEW: Journaling reminder controls */}
       <Card title="Journaling Reminders" sub="Customize how and when you’re nudged to journal.">
