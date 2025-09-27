@@ -3,6 +3,7 @@ import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
 import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
 import { createPortal } from "react-dom";
+import { Button } from "./ui";
 
 function ThemeTogglePortal() {
   const { theme, toggle, colors } = useTheme();
@@ -287,7 +288,10 @@ export const FEATURES = Object.freeze({
 
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
+
+// === Conflict Styles (NEW) ===
+type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
 
 export type UserState = {
   version: number;
@@ -295,19 +299,39 @@ export type UserState = {
   completedHabits: Partial<Record<MicroHabitId, string[]>>;
   assessmentScores: Partial<Record<"cooperative" | "avoidant" | "competitive", number>>;
   selectedVerseTopic: VerseTopic;
+
+  // NEW — results of the conflict style assessment
+  stylePrimary?: ConflictStyle;
+  styleSecondary?: ConflictStyle;
 };
 
 function migrate(old: any): UserState | null {
-  // Example scaffold: v1 -> v2 set default selectedVerseTopic
-  if (old && typeof old === "object" && old.version === 1) {
-    return {
-      version: STORAGE_VERSION,
-      completedHabits: old.completedHabits ?? {},
-      assessmentScores: old.assessmentScores ?? {},
-      selectedVerseTopic: "unity",
-    };
+  // Upgrade chain:
+  // - v1 -> v3
+  // - v2 -> v3
+  if (old && typeof old === "object") {
+    if (old.version === 1) {
+      return {
+        version: STORAGE_VERSION,
+        completedHabits: old.completedHabits ?? {},
+        assessmentScores: old.assessmentScores ?? {},
+        selectedVerseTopic: "unity",
+        stylePrimary: old.stylePrimary,      // carry if present
+        styleSecondary: old.styleSecondary,  // carry if present
+      };
+    }
+    if (old.version === 2) {
+      return {
+        version: STORAGE_VERSION,
+        completedHabits: old.completedHabits ?? {},
+        assessmentScores: old.assessmentScores ?? {},
+        selectedVerseTopic: old.selectedVerseTopic ?? "unity",
+        stylePrimary: old.stylePrimary,
+        styleSecondary: old.styleSecondary,
+      };
+    }
   }
-  return null; // unknown or unsupported version
+  return null; // unknown or unsupported -> wipe to defaults in loadState()
 }
 
 export function loadState(): UserState {
@@ -420,6 +444,91 @@ const LessonsIndex = [
     scriptures: ["Rom 3:23", "1 John 1:9", "Ps 51"],
     commentaryRefs: ["Grudem, Systematic Theology (Hamartiology sections)"],
   },
+];
+
+// === Style-specific coaching tips (NEW) ===
+const STYLE_TIPS: Record<ConflictStyle, string[]> = {
+  Avoidant: [
+    "Name the issue—don’t delay.",
+    "Schedule the talk, don’t escape.",
+    "Use “I feel…” to enter gently.",
+  ],
+  Competitive: [
+    "Understand before being understood.",
+    "Ask two curious questions first.",
+    "Affirm feelings; win together.",
+  ],
+  Cooperative: [
+    "Summarize first, invite correction.",
+    "Brainstorm options together.",
+    "Pray briefly before deciding.",
+  ],
+};
+
+// === Conflict Style Assessment Questions (NEW) ===
+type Q = { id: string; prompt: string; options: { label: string; style: ConflictStyle }[] };
+
+const ASSESSMENT: Q[] = [
+  { id: uid(), prompt: "When conflict appears suddenly, I usually…", options: [
+    { label: "Change the subject or cool off alone", style:"Avoidant" },
+    { label: "Make my case quickly and firmly", style:"Competitive" },
+    { label: "Clarify goals and ask questions", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "If my spouse raises their voice, I…", options: [
+    { label: "Go quiet / shut down", style:"Avoidant" },
+    { label: "Match energy to be heard", style:"Competitive" },
+    { label: "Slow the pace and seek calm", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "I feel most uncomfortable when…", options: [
+    { label: "We’re stuck in a tense talk", style:"Avoidant" },
+    { label: "My point doesn’t land", style:"Competitive" },
+    { label: "We misunderstand each other", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "My first sentence in conflict is often…", options: [
+    { label:"“It’s not a big deal.”", style:"Avoidant" },
+    { label:"“Here’s what’s wrong.”", style:"Competitive" },
+    { label:"“Help me understand…”", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "Deadlines or pressure make me…", options: [
+    { label:"Withdraw to think", style:"Avoidant" },
+    { label:"Take charge decisively", style:"Competitive" },
+    { label:"List options collaboratively", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "When my feelings are hurt, I…", options: [
+    { label:"Numb out / distract", style:"Avoidant" },
+    { label:"Defend strongly", style:"Competitive" },
+    { label:"Name it and invite repair", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "During tough talks, I track…", options: [
+    { label:"Exit routes / breaks", style:"Avoidant" },
+    { label:"Errors / inconsistencies", style:"Competitive" },
+    { label:"Common ground / next steps", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "After conflict, I usually…", options: [
+    { label:"Prefer not to revisit it", style:"Avoidant" },
+    { label:"Feel I should have pushed more", style:"Competitive" },
+    { label:"Debrief for learning & grace", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "In group decisions, I…", options: [
+    { label:"Let others choose", style:"Avoidant" },
+    { label:"Advocate strongly", style:"Competitive" },
+    { label:"Facilitate consensus", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "If plans change last minute…", options: [
+    { label:"Relief to avoid conflict", style:"Avoidant" },
+    { label:"Push to keep original plan", style:"Competitive" },
+    { label:"Renegotiate expectations", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "When my spouse is emotional…", options: [
+    { label:"I give space silently", style:"Avoidant" },
+    { label:"I try to fix it fast", style:"Competitive" },
+    { label:"I validate first, then explore", style:"Cooperative" },
+  ]},
+  { id: uid(), prompt: "I feel proud after conflict when…", options: [
+    { label:"I stayed out of drama", style:"Avoidant" },
+    { label:"I proved my point", style:"Competitive" },
+    { label:"We understood each other", style:"Cooperative" },
+  ]},
 ];
 
 /* -------------------- UTILITIES (local-date correctness + DST-proof seed) -------------------- */
@@ -717,6 +826,36 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
   );
 }
 
+// === CoachTips (NEW) — style-aware tip list ===
+function CoachTips({
+  primary,
+  secondary,
+}: {
+  primary?: ConflictStyle;
+  secondary?: ConflictStyle;
+}) {
+  const tips = [
+    ...(primary ? STYLE_TIPS[primary] : []),
+    ...(secondary && secondary !== primary ? STYLE_TIPS[secondary] : []),
+  ].slice(0, 5);
+
+  if (!tips.length) {
+    return (
+      <div style={{ color: TG_COLORS.textDim, fontSize: 13 }}>
+        Take the assessment to unlock personalized tips.
+      </div>
+    );
+  }
+
+  return (
+    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+      {tips.map((t, i) => (
+        <li key={i}>{t}</li>
+      ))}
+    </ul>
+  );
+}
+
 /* -------------------- HOME -------------------- */
 function Card(p: React.PropsWithChildren<{ title: string; sub?: string }>) {
   return (
@@ -932,51 +1071,159 @@ function Lessons() {
   );
 }
 
+// === Assessment (NEW) — multi-question conflict style flow ===
+function Assessment({
+  onClose,
+  onFinish,
+}: {
+  onClose: () => void;
+  onFinish: (primary: ConflictStyle, secondary: ConflictStyle) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, ConflictStyle>>({});
+  const [i, setI] = useState(0);
+  const q = ASSESSMENT[i];
+  const done = Object.keys(answers).length === ASSESSMENT.length;
+
+  const choose = (style: ConflictStyle) => {
+    setAnswers((a) => ({ ...a, [q.id]: style }));
+    if (i < ASSESSMENT.length - 1) setI(i + 1);
+  };
+
+  const compute = () => {
+    const score: Record<ConflictStyle, number> = {
+      Avoidant: 0,
+      Competitive: 0,
+      Cooperative: 0,
+    };
+    Object.values(answers).forEach((s) => (score[s]++));
+    const sorted = (Object.keys(score) as ConflictStyle[]).sort(
+      (a, b) => score[b] - score[a]
+    );
+    onFinish(sorted[0], sorted[1]);
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        border: `1px solid ${TG_COLORS.border}`,
+        borderRadius: 12,
+        padding: 16,
+        background: TG_COLORS.surface,
+        color: TG_COLORS.text,
+        marginTop: 12,
+      }}
+    >
+      <div
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+      >
+        <h3 style={{ margin: 0 }}>Conflict Style Assessment</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{ ...pillStyle, background: "transparent", borderColor: TG_COLORS.border }}
+        >
+          Close
+        </button>
+      </div>
+
+      {!done ? (
+        <>
+          <div style={{ marginTop: 10, fontWeight: 700 }}>
+            Question {i + 1} of {ASSESSMENT.length}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.5 }}>{q.prompt}</div>
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            {q.options.map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                onClick={() => choose(o.style)}
+                style={{
+                  textAlign: "left",
+                  border: `1px solid ${TG_COLORS.border}`,
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  background: TG_COLORS.surface,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 12, color: TG_COLORS.textDim }}>
+            Your answers determine your primary and secondary styles.
+          </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>All done!</div>
+          <button
+            type="button"
+            onClick={compute}
+            style={{
+              background: TG_COLORS.accent,
+              color: "#000",
+              border: "none",
+              borderRadius: 10,
+              padding: "12px 16px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            See Results
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* -------------------- ASSESSMENTS -------------------- */
 function Assessments() {
   const { user, setUser } = useApp();
-  const [temp, setTemp] = useState(3); // 1–5 cooperative score (example)
+  const [show, setShow] = useState(false);
 
   return (
     <>
-      <Card title="Conflict Style (quick check)">
-        <div style={{ marginBottom: 8 }}>
-          On a scale of 1–5, how cooperative did you feel in your last conflict?
+      <Card title="Your Conflict Style">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
+            Primary: {user.stylePrimary ?? "—"}
+          </span>
+          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
+            Secondary: {user.styleSecondary ?? "—"}
+          </span>
         </div>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          step={1}
-          value={temp}
-          onChange={(e) => setTemp(parseInt(e.currentTarget.value))}
-          aria-label="Cooperative score"
-        />
-        <div style={{ marginTop: 6 }}>Selected: {temp}</div>
-        <button
-          type="button"
-          onClick={() => {
-            const next = {
-              ...user,
-              assessmentScores: { ...user.assessmentScores, cooperative: temp },
-            };
-            setUser(next);
+
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={() => setShow(true)}
+            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
+          >
+            {user.stylePrimary ? "Retake Assessment" : "Take Assessment"}
+          </button>
+        </div>
+
+        {/* Personalized tips inline */}
+        <div style={{ marginTop: 14 }}>
+          <CoachTips primary={user.stylePrimary} secondary={user.styleSecondary} />
+        </div>
+      </Card>
+
+      {show && (
+        <Assessment
+          onClose={() => setShow(false)}
+          onFinish={(primary, secondary) => {
+            setUser({ ...user, stylePrimary: primary, styleSecondary: secondary });
+            setShow(false);
           }}
-          style={{ ...pillStyle, marginTop: 8, borderColor: TG_COLORS.primary }}
-        >
-          Save score
-        </button>
-
-        <div style={{ marginTop: 10, color: TG_COLORS.textDim, fontSize: 13 }}>
-          Last saved: {user.assessmentScores.cooperative ?? "—"}
-        </div>
-      </Card>
-
-      <Card title="Planned: Full Assessment Battery">
-        <div style={{ lineHeight: 1.6 }}>
-          We’ll expand to avoidance / competitive indices, plus longitudinal charts.
-        </div>
-      </Card>
+        />
+      )}
     </>
   );
 }
@@ -1211,3 +1458,4 @@ function Footer() {
     </div>
   );
 }
+

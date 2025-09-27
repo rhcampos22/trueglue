@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, createContext, useContext } from "
 import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
 import { TG_COLORS } from "./theme";
+import { Button } from "./ui";
 
 // ===== Conflict Workflow: Types =====
 type UserId = "A" | "B";
@@ -245,7 +246,12 @@ export const TOPICS = [
 ] as const;
 export type VerseTopic = typeof TOPICS[number];
 
-export type MicroHabitId = "gratitude" | "loveMap" | "scriptureVOTD" | "prayer";
+export type MicroHabitId =
+  | "gratitude"
+  | "loveMap"
+  | "scriptureVOTD"
+  | "prayer"
+  | "calmBreath";
 
 /* -------------------- FEATURE FLAGS (beta-friendly, immutable) -------------------- */
 export const FEATURES = Object.freeze({
@@ -637,7 +643,6 @@ type AppTabsProps = {
 };
 
 function AppTabs({ route, setRoute }: AppTabsProps) {
-  // Compose items (conditionally include Church if enabled)
   const tabItems = React.useMemo<ReadonlyArray<TabItem<TGRoute>>>(() => {
     const base: ReadonlyArray<TabItem<TGRoute>> = [
       { id: "home",         label: "Home",              panel: <Home /> },
@@ -645,25 +650,22 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
       { id: "lessons",      label: "Lessons",           panel: <Lessons /> },
       { id: "workflow",     label: "Conflict Workflow", panel: <ConflictWorkflow /> },
       { id: "assessments",  label: "Assessments",       panel: <Assessments /> },
-      { id: "calm",         label: "Calm",              panel: <CalmTools /> },
     ];
+
     if (FEATURES.churchMode) {
+      // insert “Church” after Lessons for visibility
       const copy = base.slice();
-      const calmIndex = copy.findIndex((t) => t.id === "calm");
-      copy.splice(calmIndex, 0, { id: "church", label: "Church", panel: <ChurchPanel /> });
+      const idx = copy.findIndex(t => t.id === "lessons");
+      copy.splice(idx + 1, 0, { id: "church", label: "Church", panel: <ChurchPanel /> });
       return copy;
     }
     return base;
   }, []);
 
-  // Hash <-> state sync
-  const onChange = React.useCallback(
-    (id: TGRoute) => {
-      window.location.hash = `#/${id}`;
-      setRoute(id);
-    },
-    [setRoute]
-  );
+  const onChange = React.useCallback((id: TGRoute) => {
+    window.location.hash = `#/${id}`;
+    setRoute(id);
+  }, [setRoute]);
 
   return (
     <Tabs
@@ -802,6 +804,7 @@ function MicroHabits() {
   const dayIndex = localDaySeed();
   const loveMap = LoveMapQuestions[randIndex(LoveMapQuestions, dayIndex)];
   const prayer = PrayerNudges[randIndex(PrayerNudges, dayIndex)];
+  const [openCalm, setOpenCalm] = React.useState(false);
 
   return (
     <>
@@ -823,8 +826,39 @@ function MicroHabits() {
         <HabitRow id="prayer" title="Pray for 30 seconds" tip="Short and sincere." />
       </Card>
 
+      {/* NEW: Calm — Breathe micro-habit */}
+      <Card title="Calm — Breathe" sub="Calm the nervous system, reduce stress, improve mental clarity">
+        <div style={{ marginBottom: 10 }}>
+          Inhale 4 • Hold 4 • Exhale 6 — repeat gently. You can proceed at any time.
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <button
+            type="button"
+            onClick={() => setOpenCalm(true)}
+            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
+          >
+            Open Calm Timer
+          </button>
+        </div>
+        <HabitRow
+          id="calmBreath"
+          title="Do a 60-second breathe"
+          tip="Open the timer, take 3–6 slow cycles, then mark done."
+        />
+
+        <CalmBreathModal
+          open={openCalm}
+          onClose={() => setOpenCalm(false)}
+          onProceed={() => setOpenCalm(false)}
+          seconds={60}
+          scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
+        />
+      </Card>
+
       <Card title="Scripture — Verse of the Day">
-        <div style={{ marginBottom: 10 }}>See Home for your Verse of the Day (topic selectable there).</div>
+        <div style={{ marginBottom: 10 }}>
+          See Home for your Verse of the Day (topic selectable there).
+        </div>
         <HabitRow id="scriptureVOTD" title="Read it together" tip="Ask: What stands out? Why?" />
       </Card>
     </>
@@ -909,14 +943,34 @@ function Assessments() {
   );
 }
 
-/* -------------------- CALM TOOLS (safer timer) -------------------- */
-function CalmTools() {
-  const [sec, setSec] = useState(60);
-  const [running, setRunning] = useState(false);
+/** =================== CalmBreathModal (animated calm timer) =================== */
+function CalmBreathModal({
+  open,
+  onClose,
+  onProceed,
+  seconds = 60,
+  scripture = "James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God.",
+}: {
+  open: boolean;
+  onClose: () => void;
+  onProceed: () => void;           // proceed anytime
+  seconds?: number;
+  scripture?: string;
+}) {
+  const [sec, setSec] = React.useState(seconds);
+  const [running, setRunning] = React.useState(true);
   const intervalRef = React.useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!running) {
+  // Reset each time it opens
+  React.useEffect(() => {
+    if (!open) return;
+    setSec(seconds);
+    setRunning(true);
+  }, [open, seconds]);
+
+  // Safe interval management
+  React.useEffect(() => {
+    if (!open || !running) {
       if (intervalRef.current) {
         window.clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -932,67 +986,153 @@ function CalmTools() {
         intervalRef.current = null;
       }
     };
-  }, [running]);
+  }, [open, running]);
 
-  useEffect(() => {
-    if (sec === 0 && running) setRunning(false);
-  }, [sec, running]);
+  if (!open) return null;
 
-  const pct = Math.round(((60 - sec) / 60) * 100);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 1000,
+        padding: 16,
+      }}
+    >
+      <style>{`
+        @keyframes tg-breathe {
+          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
+          50%  { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(138,21,56,.08); }
+          100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
+        }
+      `}</style>
+
+      <div
+        style={{
+          maxWidth: 640,
+          width: "100%",
+          background: TG_COLORS.surface,
+          border: `1px solid ${TG_COLORS.border}`,
+          borderRadius: 14,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+          color: TG_COLORS.text,
+          padding: 16,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}></h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              ...pillStyle,
+              background: "transparent",
+              borderColor: TG_COLORS.border,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Ring */}
+        <div style={{ display: "grid", placeItems: "center", padding: "14px 0 6px" }}>
+          <div
+            aria-label="Breathing animation"
+            style={{
+              width: 220,
+              height: 220,
+              borderRadius: "50%",
+              border: `4px solid ${TG_COLORS.primary}`,
+              display: "grid",
+              placeItems: "center",
+              animation: "tg-breathe 6s ease-in-out infinite",
+              background: "transparent",
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Breathe</div>
+          </div>
+        </div>
+
+        {/* Timer + controls */}
+        <div style={{ textAlign: "center", marginTop: 6 }}>
+          <div style={{ fontSize: 30, fontWeight: 800 }}>{sec}s</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={onProceed}
+              style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
+            >
+              Proceed
+            </button>
+            <button
+              type="button"
+              onClick={() => setRunning((r) => !r)}
+              style={pillStyle}
+            >
+              {running ? "Pause" : "Resume"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRunning(false);
+                setSec(seconds);
+              }}
+              style={pillStyle}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Scripture line */}
+        <p style={{ color: TG_COLORS.textDim, textAlign: "center", marginTop: 14, marginBottom: 6 }}>
+          {scripture}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- CALM TOOLS (breathing modal) -------------------- */
+function CalmTools() {
+  const [open, setOpen] = React.useState(true); // auto-open when visiting the Calm tab
 
   return (
     <>
-      <Card title="1-Minute Breathing">
-        <div>Inhale 4 • Hold 4 • Exhale 6 — repeat gently.</div>
-        <div style={{ marginTop: 8, fontSize: 32, fontWeight: 800 }} aria-live="polite">
-          {sec}s
+      {/* A simple card that lets users reopen the modal */}
+      <Card title="Calm — Breathe & Pray">
+        <div style={{ lineHeight: 1.6 }}>
+          Use this before a tough conversation. You can proceed at any time—you don’t have to wait the full 60 seconds.
         </div>
-        <div
-          aria-hidden
-          style={{
-            marginTop: 10,
-            height: 10,
-            borderRadius: 6,
-            background: "#F1EDF2",
-            overflow: "hidden",
-            border: `1px solid ${TG_COLORS.border}`,
-          }}
-        >
-          <div style={{ width: `${pct}%`, height: "100%", background: TG_COLORS.accent }} />
-        </div>
-        <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+        <div style={{ marginTop: 10 }}>
           <button
             type="button"
-            onClick={() => {
-              setSec(60);
-              setRunning(true);
-            }}
+            onClick={() => setOpen(true)}
             style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
           >
-            Start
-          </button>
-          <button type="button" onClick={() => setRunning(false)} style={pillStyle}>
-            Pause
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRunning(false);
-              setSec(60);
-            }}
-            style={pillStyle}
-          >
-            Reset
+            Open Calm Timer
           </button>
         </div>
       </Card>
 
-      <Card title="Fast Prayer">
-        <div>“Lord Jesus, give us patience, humility, and unity. Help us listen well. Amen.”</div>
-      </Card>
+      <CalmBreathModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onProceed={() => setOpen(false)}
+        seconds={60}
+        scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
+      />
     </>
   );
 }
+
 
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
@@ -1033,3 +1173,4 @@ function Footer() {
     </div>
   );
 }
+

@@ -1,7 +1,36 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
 import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
-import { TG_COLORS } from "./theme";
+import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
+import { createPortal } from "react-dom";
+import { Button } from "./ui";
+
+function ThemeTogglePortal() {
+  const { theme, toggle, colors } = useTheme();
+  const btn = (
+    <button
+      aria-label="Toggle light/dark theme"
+      onClick={toggle}
+      style={{
+        position: "fixed",
+        top: 12,
+        right: 12,
+        zIndex: 2147483647,
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${colors.border}`,
+        background: colors.surface,
+        color: colors.text,
+        cursor: "pointer",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+      }}
+    >
+      {theme === "dark" ? "☾ Dark" : "☀︎ Light"}
+    </button>
+  );
+  return createPortal(btn, document.body);
+}
+
 
 // ===== Conflict Workflow: Types =====
 type UserId = "A" | "B";
@@ -129,13 +158,6 @@ END:VCALENDAR
  *  ============================================================ */
 
 /* -------------------- THEME (TrueGlue palette) -------------------- */
-
-const appStyle: React.CSSProperties = {
-  fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-  background: TG_COLORS.bg,
-  color: TG_COLORS.text,
-  minHeight: "100vh",
-};
 
 const containerStyle: React.CSSProperties = {
   maxWidth: 1100,
@@ -553,6 +575,14 @@ function Tabs<ID extends string>({
 
 /* -------------------- ROOT -------------------- */
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
+function AppShell() {
   // Initialize route from hash BEFORE first paint to avoid flashing "Home"
   const initialRoute = ((): TGRoute => {
     if (typeof window === "undefined") return "home";
@@ -560,13 +590,20 @@ export default function App() {
     return (h as TGRoute) || "home";
   })();
 
+  const { colors } = useTheme();
+
+  const appStyle: React.CSSProperties = {
+    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    background: colors.bg,
+    color: colors.text,
+    minHeight: "100vh",
+  };
+
   const [user, setUser] = useState<UserState>(() => loadState());
   const [route, setRoute] = useState<TGRoute>(initialRoute);
 
-  // Persist user state (with pruning)
   useEffect(() => saveState(user), [user]);
 
-  // Minimal hash router for deep-linking/back/forward
   useEffect(() => {
     const applyHash = () => {
       const r = window.location.hash.replace("#/", "") as TGRoute;
@@ -581,7 +618,7 @@ export default function App() {
       user,
       setUser,
       completeHabit: (id) => {
-        const d = todayISO(); // local date
+        const d = todayISO();
         const p = user.completedHabits[id] ?? [];
         if (!p.includes(d)) {
           const next = {
@@ -595,43 +632,46 @@ export default function App() {
         }
       },
       setVerseTopic: (t) => setUser({ ...user, selectedVerseTopic: t }),
-      track: (_event, _props) => {
-        // Wire up to PostHog/Mixpanel later
-      },
+      track: (_event, _props) => {},
     }),
     [user]
   );
 
   return (
-    <div style={appStyle}>
-      <div style={containerStyle}>
-     <header style={headerStyle}>
-  <img
-    src={TrueGlueLogo}
-    alt="TrueGlue logo"
-    style={{
-      width: 50,
-      height: 50,
-      borderRadius: "50%", // circular crop
-      objectFit: "cover",  // fills the circle without distortion
-      border: `2px solid ${TG_COLORS.accent}`, // same gold border as before
-      boxShadow: "0 0 0 2px rgba(212,175,55,0.2)", // same soft glow
-    }}
-  />
-  <div>
-    <h1 style={h1Style}>TrueGlue</h1>
-    <p style={taglineStyle}>Gospel-centered tools for everyday marriage.</p>
-  </div>
-</header>
+    <>
+      <ThemeTogglePortal />
 
+      <div style={appStyle}>
+        <div style={containerStyle}>
+          <header style={headerStyle}>
+            <img
+              src={TrueGlueLogo}
+              alt="TrueGlue logo"
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: "50%",
+                objectFit: "cover",
+                border: `2px solid ${colors.accent}`,
+                boxShadow: "0 0 0 2px rgba(212,175,55,0.2)",
+              }}
+            />
+            <div>
+              <h1 style={h1Style}>TrueGlue</h1>
+              <p style={{ ...taglineStyle, color: colors.textDim }}>
+                Gospel-centered tools for everyday marriage.
+              </p>
+            </div>
+          </header>
 
-        <Ctx.Provider value={api}>
-          <AppTabs route={route} setRoute={setRoute} />
-        </Ctx.Provider>
+          <Ctx.Provider value={api}>
+            <AppTabs route={route} setRoute={setRoute} />
+          </Ctx.Provider>
 
-        <Footer />
+          <Footer />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1172,3 +1212,4 @@ function Footer() {
     </div>
   );
 }
+

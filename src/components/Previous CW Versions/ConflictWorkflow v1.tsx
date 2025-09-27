@@ -1,5 +1,6 @@
 import React from "react";
 import { TG_COLORS } from "../theme";
+import { Button } from "./ui";
 
 function PillButton({ children, onClick, kind = "outline", disabled = false }: {
   children: React.ReactNode;
@@ -667,3 +668,4 @@ export default function ConflictWorkflow() {
     </div>
   );
 }
+

@@ -79,6 +79,51 @@ export function textareaStyle(T: Theme): React.CSSProperties {
   return { ...inputStyle(T), minHeight: 106, resize: "vertical" as const };
 }
 
+/** Heading styles (normalize margins & sizes) */
+export function h2Style(): React.CSSProperties {
+  return { fontSize: 24, lineHeight: "28px", fontWeight: 700, margin: "0 0 6px 0" };
+}
+export function h3Style(): React.CSSProperties {
+  return { fontSize: 18, lineHeight: "22px", fontWeight: 700, margin: "0 0 6px 0" };
+}
+export function h4Style(): React.CSSProperties {
+  return { fontSize: 16, lineHeight: "20px", fontWeight: 600, margin: "0 0 6px 0" };
+}
+
+// --- ADD BELOW textareaStyle(T) in src/ui.tsx ---
+export function ButtonRow({
+  children,
+  align = "start",
+  wrap = true,
+  style,
+}: {
+  children: React.ReactNode;
+  align?: "start" | "center" | "end" | "between";
+  wrap?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const justifyContent =
+    align === "start" ? "flex-start" :
+    align === "center" ? "center" :
+    align === "end" ? "flex-end" :
+    "space-between";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        flexWrap: wrap ? "wrap" : "nowrap",
+        justifyContent,
+        alignItems: "center",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** ─────────────────────────────────────────────────────────────────────────────
  *  New Unified Components
  *  ────────────────────────────────────────────────────────────────────────────*/
@@ -158,6 +203,14 @@ export const Button = React.forwardRef<
       onMouseUp={(e) => {
         (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
       }}
+onMouseEnter={(e) => {
+  (e.currentTarget as HTMLButtonElement).style.boxShadow = tokens.shadow.md;
+}}
+onMouseLeave={(e) => {
+  (e.currentTarget as HTMLButtonElement).style.boxShadow = tokens.shadow.sm;
+  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+}}
+
     >
       {loading ? "…" : children}
     </button>
@@ -176,6 +229,7 @@ export function TabPill({
   onSelect?: () => void;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { colors, tokens } = useTheme();
+
   return (
     <button
       role="tab"
@@ -185,6 +239,12 @@ export function TabPill({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect?.();
       }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.06)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1)";
+      }}
       {...rest}
       style={{
         padding: "8px 12px",
@@ -192,8 +252,10 @@ export function TabPill({
         border: `1px solid ${active ? colors.primary : colors.border}`,
         background: active ? colors.primarySoft : colors.surface,
         color: active ? colors.primary : colors.text,
-        transition: "background 120ms ease, border-color 120ms ease",
+        transition: "background 120ms ease, border-color 120ms ease, filter 80ms ease",
         marginRight: 8,
+        boxShadow: "none",
+        filter: "brightness(1)", // baseline; hover bumps to 1.06
         ...style,
       }}
     >
@@ -369,4 +431,5 @@ export function Pill({
     </span>
   );
 }
+
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
 import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
+import { Button } from "./ui";
 
 /** ============================================================
  *  TRUEGLUE — Unified App (React + TypeScript) • Single-file entry
@@ -997,3 +998,4 @@ function Footer() {
     </div>
   );
 }
+

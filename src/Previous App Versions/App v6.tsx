@@ -1,35 +1,8 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
 import TrueGlueLogo from "./assets/TrueGlue Logo - No Text.png";
 import ConflictWorkflow from "./components/ConflictWorkflow";
-import { TG_COLORS, ThemeProvider, useTheme } from "./theme.tsx";
-import { createPortal } from "react-dom";
-
-function ThemeTogglePortal() {
-  const { theme, toggle, colors } = useTheme();
-  const btn = (
-    <button
-      aria-label="Toggle light/dark theme"
-      onClick={toggle}
-      style={{
-        position: "fixed",
-        top: 12,
-        right: 12,
-        zIndex: 2147483647,
-        padding: "8px 12px",
-        borderRadius: 999,
-        border: `1px solid ${colors.border}`,
-        background: colors.surface,
-        color: colors.text,
-        cursor: "pointer",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-      }}
-    >
-      {theme === "dark" ? "☾ Dark" : "☀︎ Light"}
-    </button>
-  );
-  return createPortal(btn, document.body);
-}
-
+import { TG_COLORS } from "./theme";
+import { Button } from "./ui";
 
 // ===== Conflict Workflow: Types =====
 type UserId = "A" | "B";
@@ -158,6 +131,13 @@ END:VCALENDAR
 
 /* -------------------- THEME (TrueGlue palette) -------------------- */
 
+const appStyle: React.CSSProperties = {
+  fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+  background: TG_COLORS.bg,
+  color: TG_COLORS.text,
+  minHeight: "100vh",
+};
+
 const containerStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: "0 auto",
@@ -266,12 +246,7 @@ export const TOPICS = [
 ] as const;
 export type VerseTopic = typeof TOPICS[number];
 
-export type MicroHabitId =
-  | "gratitude"
-  | "loveMap"
-  | "scriptureVOTD"
-  | "prayer"
-  | "calmBreath";
+export type MicroHabitId = "gratitude" | "loveMap" | "scriptureVOTD" | "prayer";
 
 /* -------------------- FEATURE FLAGS (beta-friendly, immutable) -------------------- */
 export const FEATURES = Object.freeze({
@@ -287,10 +262,7 @@ export const FEATURES = Object.freeze({
 
 /* -------------------- STORAGE (versioned + migration stub) -------------------- */
 export const STORAGE_KEY = "trueglue.v2.user";
-export const STORAGE_VERSION = 3;
-
-// === Conflict Styles (NEW) ===
-type ConflictStyle = "Avoidant" | "Competitive" | "Cooperative";
+export const STORAGE_VERSION = 2;
 
 export type UserState = {
   version: number;
@@ -298,39 +270,19 @@ export type UserState = {
   completedHabits: Partial<Record<MicroHabitId, string[]>>;
   assessmentScores: Partial<Record<"cooperative" | "avoidant" | "competitive", number>>;
   selectedVerseTopic: VerseTopic;
-
-  // NEW — results of the conflict style assessment
-  stylePrimary?: ConflictStyle;
-  styleSecondary?: ConflictStyle;
 };
 
 function migrate(old: any): UserState | null {
-  // Upgrade chain:
-  // - v1 -> v3
-  // - v2 -> v3
-  if (old && typeof old === "object") {
-    if (old.version === 1) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: "unity",
-        stylePrimary: old.stylePrimary,      // carry if present
-        styleSecondary: old.styleSecondary,  // carry if present
-      };
-    }
-    if (old.version === 2) {
-      return {
-        version: STORAGE_VERSION,
-        completedHabits: old.completedHabits ?? {},
-        assessmentScores: old.assessmentScores ?? {},
-        selectedVerseTopic: old.selectedVerseTopic ?? "unity",
-        stylePrimary: old.stylePrimary,
-        styleSecondary: old.styleSecondary,
-      };
-    }
+  // Example scaffold: v1 -> v2 set default selectedVerseTopic
+  if (old && typeof old === "object" && old.version === 1) {
+    return {
+      version: STORAGE_VERSION,
+      completedHabits: old.completedHabits ?? {},
+      assessmentScores: old.assessmentScores ?? {},
+      selectedVerseTopic: "unity",
+    };
   }
-  return null; // unknown or unsupported -> wipe to defaults in loadState()
+  return null; // unknown or unsupported version
 }
 
 export function loadState(): UserState {
@@ -443,91 +395,6 @@ const LessonsIndex = [
     scriptures: ["Rom 3:23", "1 John 1:9", "Ps 51"],
     commentaryRefs: ["Grudem, Systematic Theology (Hamartiology sections)"],
   },
-];
-
-// === Style-specific coaching tips (NEW) ===
-const STYLE_TIPS: Record<ConflictStyle, string[]> = {
-  Avoidant: [
-    "Name the issue—don’t delay.",
-    "Schedule the talk, don’t escape.",
-    "Use “I feel…” to enter gently.",
-  ],
-  Competitive: [
-    "Understand before being understood.",
-    "Ask two curious questions first.",
-    "Affirm feelings; win together.",
-  ],
-  Cooperative: [
-    "Summarize first, invite correction.",
-    "Brainstorm options together.",
-    "Pray briefly before deciding.",
-  ],
-};
-
-// === Conflict Style Assessment Questions (NEW) ===
-type Q = { id: string; prompt: string; options: { label: string; style: ConflictStyle }[] };
-
-const ASSESSMENT: Q[] = [
-  { id: uid(), prompt: "When conflict appears suddenly, I usually…", options: [
-    { label: "Change the subject or cool off alone", style:"Avoidant" },
-    { label: "Make my case quickly and firmly", style:"Competitive" },
-    { label: "Clarify goals and ask questions", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "If my spouse raises their voice, I…", options: [
-    { label: "Go quiet / shut down", style:"Avoidant" },
-    { label: "Match energy to be heard", style:"Competitive" },
-    { label: "Slow the pace and seek calm", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "I feel most uncomfortable when…", options: [
-    { label: "We’re stuck in a tense talk", style:"Avoidant" },
-    { label: "My point doesn’t land", style:"Competitive" },
-    { label: "We misunderstand each other", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "My first sentence in conflict is often…", options: [
-    { label:"“It’s not a big deal.”", style:"Avoidant" },
-    { label:"“Here’s what’s wrong.”", style:"Competitive" },
-    { label:"“Help me understand…”", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "Deadlines or pressure make me…", options: [
-    { label:"Withdraw to think", style:"Avoidant" },
-    { label:"Take charge decisively", style:"Competitive" },
-    { label:"List options collaboratively", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "When my feelings are hurt, I…", options: [
-    { label:"Numb out / distract", style:"Avoidant" },
-    { label:"Defend strongly", style:"Competitive" },
-    { label:"Name it and invite repair", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "During tough talks, I track…", options: [
-    { label:"Exit routes / breaks", style:"Avoidant" },
-    { label:"Errors / inconsistencies", style:"Competitive" },
-    { label:"Common ground / next steps", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "After conflict, I usually…", options: [
-    { label:"Prefer not to revisit it", style:"Avoidant" },
-    { label:"Feel I should have pushed more", style:"Competitive" },
-    { label:"Debrief for learning & grace", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "In group decisions, I…", options: [
-    { label:"Let others choose", style:"Avoidant" },
-    { label:"Advocate strongly", style:"Competitive" },
-    { label:"Facilitate consensus", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "If plans change last minute…", options: [
-    { label:"Relief to avoid conflict", style:"Avoidant" },
-    { label:"Push to keep original plan", style:"Competitive" },
-    { label:"Renegotiate expectations", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "When my spouse is emotional…", options: [
-    { label:"I give space silently", style:"Avoidant" },
-    { label:"I try to fix it fast", style:"Competitive" },
-    { label:"I validate first, then explore", style:"Cooperative" },
-  ]},
-  { id: uid(), prompt: "I feel proud after conflict when…", options: [
-    { label:"I stayed out of drama", style:"Avoidant" },
-    { label:"I proved my point", style:"Competitive" },
-    { label:"We understood each other", style:"Cooperative" },
-  ]},
 ];
 
 /* -------------------- UTILITIES (local-date correctness + DST-proof seed) -------------------- */
@@ -682,14 +549,6 @@ function Tabs<ID extends string>({
 
 /* -------------------- ROOT -------------------- */
 export default function App() {
-  return (
-    <ThemeProvider>
-      <AppShell />
-    </ThemeProvider>
-  );
-}
-
-function AppShell() {
   // Initialize route from hash BEFORE first paint to avoid flashing "Home"
   const initialRoute = ((): TGRoute => {
     if (typeof window === "undefined") return "home";
@@ -697,20 +556,13 @@ function AppShell() {
     return (h as TGRoute) || "home";
   })();
 
-  const { colors } = useTheme();
-
-  const appStyle: React.CSSProperties = {
-    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    background: colors.bg,
-    color: colors.text,
-    minHeight: "100vh",
-  };
-
   const [user, setUser] = useState<UserState>(() => loadState());
   const [route, setRoute] = useState<TGRoute>(initialRoute);
 
+  // Persist user state (with pruning)
   useEffect(() => saveState(user), [user]);
 
+  // Minimal hash router for deep-linking/back/forward
   useEffect(() => {
     const applyHash = () => {
       const r = window.location.hash.replace("#/", "") as TGRoute;
@@ -725,7 +577,7 @@ function AppShell() {
       user,
       setUser,
       completeHabit: (id) => {
-        const d = todayISO();
+        const d = todayISO(); // local date
         const p = user.completedHabits[id] ?? [];
         if (!p.includes(d)) {
           const next = {
@@ -739,46 +591,43 @@ function AppShell() {
         }
       },
       setVerseTopic: (t) => setUser({ ...user, selectedVerseTopic: t }),
-      track: (_event, _props) => {},
+      track: (_event, _props) => {
+        // Wire up to PostHog/Mixpanel later
+      },
     }),
     [user]
   );
 
   return (
-    <>
-      <ThemeTogglePortal />
+    <div style={appStyle}>
+      <div style={containerStyle}>
+     <header style={headerStyle}>
+  <img
+    src={TrueGlueLogo}
+    alt="TrueGlue logo"
+    style={{
+      width: 50,
+      height: 50,
+      borderRadius: "50%", // circular crop
+      objectFit: "cover",  // fills the circle without distortion
+      border: `2px solid ${TG_COLORS.accent}`, // same gold border as before
+      boxShadow: "0 0 0 2px rgba(212,175,55,0.2)", // same soft glow
+    }}
+  />
+  <div>
+    <h1 style={h1Style}>TrueGlue</h1>
+    <p style={taglineStyle}>Gospel-centered tools for everyday marriage.</p>
+  </div>
+</header>
 
-      <div style={appStyle}>
-        <div style={containerStyle}>
-          <header style={headerStyle}>
-            <img
-              src={TrueGlueLogo}
-              alt="TrueGlue logo"
-              style={{
-                width: 50,
-                height: 50,
-                borderRadius: "50%",
-                objectFit: "cover",
-                border: `2px solid ${colors.accent}`,
-                boxShadow: "0 0 0 2px rgba(212,175,55,0.2)",
-              }}
-            />
-            <div>
-              <h1 style={h1Style}>TrueGlue</h1>
-              <p style={{ ...taglineStyle, color: colors.textDim }}>
-                Gospel-centered tools for everyday marriage.
-              </p>
-            </div>
-          </header>
 
-          <Ctx.Provider value={api}>
-            <AppTabs route={route} setRoute={setRoute} />
-          </Ctx.Provider>
+        <Ctx.Provider value={api}>
+          <AppTabs route={route} setRoute={setRoute} />
+        </Ctx.Provider>
 
-          <Footer />
-        </div>
+        <Footer />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -789,6 +638,7 @@ type AppTabsProps = {
 };
 
 function AppTabs({ route, setRoute }: AppTabsProps) {
+  // Compose items (conditionally include Church if enabled)
   const tabItems = React.useMemo<ReadonlyArray<TabItem<TGRoute>>>(() => {
     const base: ReadonlyArray<TabItem<TGRoute>> = [
       { id: "home",         label: "Home",              panel: <Home /> },
@@ -796,22 +646,25 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
       { id: "lessons",      label: "Lessons",           panel: <Lessons /> },
       { id: "workflow",     label: "Conflict Workflow", panel: <ConflictWorkflow /> },
       { id: "assessments",  label: "Assessments",       panel: <Assessments /> },
+      { id: "calm",         label: "Calm",              panel: <CalmTools /> },
     ];
-
     if (FEATURES.churchMode) {
-      // insert “Church” after Lessons for visibility
       const copy = base.slice();
-      const idx = copy.findIndex(t => t.id === "lessons");
-      copy.splice(idx + 1, 0, { id: "church", label: "Church", panel: <ChurchPanel /> });
+      const calmIndex = copy.findIndex((t) => t.id === "calm");
+      copy.splice(calmIndex, 0, { id: "church", label: "Church", panel: <ChurchPanel /> });
       return copy;
     }
     return base;
   }, []);
 
-  const onChange = React.useCallback((id: TGRoute) => {
-    window.location.hash = `#/${id}`;
-    setRoute(id);
-  }, [setRoute]);
+  // Hash <-> state sync
+  const onChange = React.useCallback(
+    (id: TGRoute) => {
+      window.location.hash = `#/${id}`;
+      setRoute(id);
+    },
+    [setRoute]
+  );
 
   return (
     <Tabs
@@ -822,36 +675,6 @@ function AppTabs({ route, setRoute }: AppTabsProps) {
       pillStyle={pillStyle}
       activePillStyle={activePillStyle}
     />
-  );
-}
-
-// === CoachTips (NEW) — style-aware tip list ===
-function CoachTips({
-  primary,
-  secondary,
-}: {
-  primary?: ConflictStyle;
-  secondary?: ConflictStyle;
-}) {
-  const tips = [
-    ...(primary ? STYLE_TIPS[primary] : []),
-    ...(secondary && secondary !== primary ? STYLE_TIPS[secondary] : []),
-  ].slice(0, 5);
-
-  if (!tips.length) {
-    return (
-      <div style={{ color: TG_COLORS.textDim, fontSize: 13 }}>
-        Take the assessment to unlock personalized tips.
-      </div>
-    );
-  }
-
-  return (
-    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-      {tips.map((t, i) => (
-        <li key={i}>{t}</li>
-      ))}
-    </ul>
   );
 }
 
@@ -980,7 +803,6 @@ function MicroHabits() {
   const dayIndex = localDaySeed();
   const loveMap = LoveMapQuestions[randIndex(LoveMapQuestions, dayIndex)];
   const prayer = PrayerNudges[randIndex(PrayerNudges, dayIndex)];
-  const [openCalm, setOpenCalm] = React.useState(false);
 
   return (
     <>
@@ -1002,39 +824,8 @@ function MicroHabits() {
         <HabitRow id="prayer" title="Pray for 30 seconds" tip="Short and sincere." />
       </Card>
 
-      {/* NEW: Calm — Breathe micro-habit */}
-      <Card title="Calm — Breathe" sub="Calm the nervous system, reduce stress, improve mental clarity">
-        <div style={{ marginBottom: 10 }}>
-          Inhale 4 • Hold 4 • Exhale 6 — repeat gently. You can proceed at any time.
-        </div>
-        <div style={{ marginBottom: 10 }}>
-          <button
-            type="button"
-            onClick={() => setOpenCalm(true)}
-            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-          >
-            Open Calm Timer
-          </button>
-        </div>
-        <HabitRow
-          id="calmBreath"
-          title="Do a 60-second breathe"
-          tip="Open the timer, take 3–6 slow cycles, then mark done."
-        />
-
-        <CalmBreathModal
-          open={openCalm}
-          onClose={() => setOpenCalm(false)}
-          onProceed={() => setOpenCalm(false)}
-          seconds={60}
-          scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
-        />
-      </Card>
-
       <Card title="Scripture — Verse of the Day">
-        <div style={{ marginBottom: 10 }}>
-          See Home for your Verse of the Day (topic selectable there).
-        </div>
+        <div style={{ marginBottom: 10 }}>See Home for your Verse of the Day (topic selectable there).</div>
         <HabitRow id="scriptureVOTD" title="Read it together" tip="Ask: What stands out? Why?" />
       </Card>
     </>
@@ -1070,191 +861,63 @@ function Lessons() {
   );
 }
 
-// === Assessment (NEW) — multi-question conflict style flow ===
-function Assessment({
-  onClose,
-  onFinish,
-}: {
-  onClose: () => void;
-  onFinish: (primary: ConflictStyle, secondary: ConflictStyle) => void;
-}) {
-  const [answers, setAnswers] = useState<Record<string, ConflictStyle>>({});
-  const [i, setI] = useState(0);
-  const q = ASSESSMENT[i];
-  const done = Object.keys(answers).length === ASSESSMENT.length;
-
-  const choose = (style: ConflictStyle) => {
-    setAnswers((a) => ({ ...a, [q.id]: style }));
-    if (i < ASSESSMENT.length - 1) setI(i + 1);
-  };
-
-  const compute = () => {
-    const score: Record<ConflictStyle, number> = {
-      Avoidant: 0,
-      Competitive: 0,
-      Cooperative: 0,
-    };
-    Object.values(answers).forEach((s) => (score[s]++));
-    const sorted = (Object.keys(score) as ConflictStyle[]).sort(
-      (a, b) => score[b] - score[a]
-    );
-    onFinish(sorted[0], sorted[1]);
-  };
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        border: `1px solid ${TG_COLORS.border}`,
-        borderRadius: 12,
-        padding: 16,
-        background: TG_COLORS.surface,
-        color: TG_COLORS.text,
-        marginTop: 12,
-      }}
-    >
-      <div
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
-      >
-        <h3 style={{ margin: 0 }}>Conflict Style Assessment</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ ...pillStyle, background: "transparent", borderColor: TG_COLORS.border }}
-        >
-          Close
-        </button>
-      </div>
-
-      {!done ? (
-        <>
-          <div style={{ marginTop: 10, fontWeight: 700 }}>
-            Question {i + 1} of {ASSESSMENT.length}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.5 }}>{q.prompt}</div>
-          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-            {q.options.map((o) => (
-              <button
-                key={o.label}
-                type="button"
-                onClick={() => choose(o.style)}
-                style={{
-                  textAlign: "left",
-                  border: `1px solid ${TG_COLORS.border}`,
-                  borderRadius: 10,
-                  padding: "12px 14px",
-                  background: TG_COLORS.surface,
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: TG_COLORS.textDim }}>
-            Your answers determine your primary and secondary styles.
-          </div>
-        </>
-      ) : (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>All done!</div>
-          <button
-            type="button"
-            onClick={compute}
-            style={{
-              background: TG_COLORS.accent,
-              color: "#000",
-              border: "none",
-              borderRadius: 10,
-              padding: "12px 16px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            See Results
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* -------------------- ASSESSMENTS -------------------- */
 function Assessments() {
   const { user, setUser } = useApp();
-  const [show, setShow] = useState(false);
+  const [temp, setTemp] = useState(3); // 1–5 cooperative score (example)
 
   return (
     <>
-      <Card title="Your Conflict Style">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
-            Primary: {user.stylePrimary ?? "—"}
-          </span>
-          <span style={{ ...pillStyle, borderColor: TG_COLORS.border }}>
-            Secondary: {user.styleSecondary ?? "—"}
-          </span>
+      <Card title="Conflict Style (quick check)">
+        <div style={{ marginBottom: 8 }}>
+          On a scale of 1–5, how cooperative did you feel in your last conflict?
         </div>
+        <input
+          type="range"
+          min={1}
+          max={5}
+          step={1}
+          value={temp}
+          onChange={(e) => setTemp(parseInt(e.currentTarget.value))}
+          aria-label="Cooperative score"
+        />
+        <div style={{ marginTop: 6 }}>Selected: {temp}</div>
+        <button
+          type="button"
+          onClick={() => {
+            const next = {
+              ...user,
+              assessmentScores: { ...user.assessmentScores, cooperative: temp },
+            };
+            setUser(next);
+          }}
+          style={{ ...pillStyle, marginTop: 8, borderColor: TG_COLORS.primary }}
+        >
+          Save score
+        </button>
 
-        <div style={{ marginTop: 10 }}>
-          <button
-            type="button"
-            onClick={() => setShow(true)}
-            style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-          >
-            {user.stylePrimary ? "Retake Assessment" : "Take Assessment"}
-          </button>
-        </div>
-
-        {/* Personalized tips inline */}
-        <div style={{ marginTop: 14 }}>
-          <CoachTips primary={user.stylePrimary} secondary={user.styleSecondary} />
+        <div style={{ marginTop: 10, color: TG_COLORS.textDim, fontSize: 13 }}>
+          Last saved: {user.assessmentScores.cooperative ?? "—"}
         </div>
       </Card>
 
-      {show && (
-        <Assessment
-          onClose={() => setShow(false)}
-          onFinish={(primary, secondary) => {
-            setUser({ ...user, stylePrimary: primary, styleSecondary: secondary });
-            setShow(false);
-          }}
-        />
-      )}
+      <Card title="Planned: Full Assessment Battery">
+        <div style={{ lineHeight: 1.6 }}>
+          We’ll expand to avoidance / competitive indices, plus longitudinal charts.
+        </div>
+      </Card>
     </>
   );
 }
 
-/** =================== CalmBreathModal (animated calm timer) =================== */
-function CalmBreathModal({
-  open,
-  onClose,
-  onProceed,
-  seconds = 60,
-  scripture = "James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God.",
-}: {
-  open: boolean;
-  onClose: () => void;
-  onProceed: () => void;           // proceed anytime
-  seconds?: number;
-  scripture?: string;
-}) {
-  const [sec, setSec] = React.useState(seconds);
-  const [running, setRunning] = React.useState(true);
+/* -------------------- CALM TOOLS (safer timer) -------------------- */
+function CalmTools() {
+  const [sec, setSec] = useState(60);
+  const [running, setRunning] = useState(false);
   const intervalRef = React.useRef<number | null>(null);
 
-  // Reset each time it opens
-  React.useEffect(() => {
-    if (!open) return;
-    setSec(seconds);
-    setRunning(true);
-  }, [open, seconds]);
-
-  // Safe interval management
-  React.useEffect(() => {
-    if (!open || !running) {
+  useEffect(() => {
+    if (!running) {
       if (intervalRef.current) {
         window.clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -1270,153 +933,67 @@ function CalmBreathModal({
         intervalRef.current = null;
       }
     };
-  }, [open, running]);
+  }, [running]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (sec === 0 && running) setRunning(false);
+  }, [sec, running]);
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "grid",
-        placeItems: "center",
-        zIndex: 1000,
-        padding: 16,
-      }}
-    >
-      <style>{`
-        @keyframes tg-breathe {
-          0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
-          50%  { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(138,21,56,.08); }
-          100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(138,21,56,.14); }
-        }
-      `}</style>
-
-      <div
-        style={{
-          maxWidth: 640,
-          width: "100%",
-          background: TG_COLORS.surface,
-          border: `1px solid ${TG_COLORS.border}`,
-          borderRadius: 14,
-          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-          color: TG_COLORS.text,
-          padding: 16,
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}></h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              ...pillStyle,
-              background: "transparent",
-              borderColor: TG_COLORS.border,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Ring */}
-        <div style={{ display: "grid", placeItems: "center", padding: "14px 0 6px" }}>
-          <div
-            aria-label="Breathing animation"
-            style={{
-              width: 220,
-              height: 220,
-              borderRadius: "50%",
-              border: `4px solid ${TG_COLORS.primary}`,
-              display: "grid",
-              placeItems: "center",
-              animation: "tg-breathe 6s ease-in-out infinite",
-              background: "transparent",
-            }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Breathe</div>
-          </div>
-        </div>
-
-        {/* Timer + controls */}
-        <div style={{ textAlign: "center", marginTop: 6 }}>
-          <div style={{ fontSize: 30, fontWeight: 800 }}>{sec}s</div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={onProceed}
-              style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
-            >
-              Proceed
-            </button>
-            <button
-              type="button"
-              onClick={() => setRunning((r) => !r)}
-              style={pillStyle}
-            >
-              {running ? "Pause" : "Resume"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRunning(false);
-                setSec(seconds);
-              }}
-              style={pillStyle}
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-
-        {/* Scripture line */}
-        <p style={{ color: TG_COLORS.textDim, textAlign: "center", marginTop: 14, marginBottom: 6 }}>
-          {scripture}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------- CALM TOOLS (breathing modal) -------------------- */
-function CalmTools() {
-  const [open, setOpen] = React.useState(true); // auto-open when visiting the Calm tab
+  const pct = Math.round(((60 - sec) / 60) * 100);
 
   return (
     <>
-      {/* A simple card that lets users reopen the modal */}
-      <Card title="Calm — Breathe & Pray">
-        <div style={{ lineHeight: 1.6 }}>
-          Use this before a tough conversation. You can proceed at any time—you don’t have to wait the full 60 seconds.
+      <Card title="1-Minute Breathing">
+        <div>Inhale 4 • Hold 4 • Exhale 6 — repeat gently.</div>
+        <div style={{ marginTop: 8, fontSize: 32, fontWeight: 800 }} aria-live="polite">
+          {sec}s
         </div>
-        <div style={{ marginTop: 10 }}>
+        <div
+          aria-hidden
+          style={{
+            marginTop: 10,
+            height: 10,
+            borderRadius: 6,
+            background: "#F1EDF2",
+            overflow: "hidden",
+            border: `1px solid ${TG_COLORS.border}`,
+          }}
+        >
+          <div style={{ width: `${pct}%`, height: "100%", background: TG_COLORS.accent }} />
+        </div>
+        <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={() => {
+              setSec(60);
+              setRunning(true);
+            }}
             style={{ ...pillStyle, borderColor: TG_COLORS.primary }}
           >
-            Open Calm Timer
+            Start
+          </button>
+          <button type="button" onClick={() => setRunning(false)} style={pillStyle}>
+            Pause
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRunning(false);
+              setSec(60);
+            }}
+            style={pillStyle}
+          >
+            Reset
           </button>
         </div>
       </Card>
 
-      <CalmBreathModal
-        open={open}
-        onClose={() => setOpen(false)}
-        onProceed={() => setOpen(false)}
-        seconds={60}
-        scripture="James 1:19–20 — Be quick to listen, slow to speak, slow to anger; for human anger does not produce the righteousness of God."
-      />
+      <Card title="Fast Prayer">
+        <div>“Lord Jesus, give us patience, humility, and unity. Help us listen well. Amen.”</div>
+      </Card>
     </>
   );
 }
-
 
 /* -------------------- CHURCH / B2B -------------------- */
 function ChurchPanel() {
@@ -1457,3 +1034,4 @@ function Footer() {
     </div>
   );
 }
+

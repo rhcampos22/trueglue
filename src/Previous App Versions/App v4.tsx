@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, createContext, useContext } from "react";
+import { Button } from "./ui";
 
 /** ============================================================
  *  TRUEGLUE — Unified App (React + TypeScript) • Single-file entry
@@ -975,3 +976,4 @@ function Footer() {
     </div>
   );
 }
+

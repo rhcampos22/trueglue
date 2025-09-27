@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Button } from "./ui";
 
 /**
  * Accessible Tabs with:
@@ -103,3 +104,4 @@ export function Tabs<ID extends string>({
     </div>
   );
 }
+

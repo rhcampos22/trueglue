@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Button, TabPill } from "./ui";
 
 /**
  * TrueGlue – Single-file React + TypeScript demo (no deps)
@@ -375,14 +376,14 @@ export default function App() {
               options={["A", "B"]}
               value={activeUser}
               onChange={(v) => setActiveUser(v as UserId)}
-              T={T}
+             
             />
             <span style={{ color: T.muted, fontSize: 13, marginLeft: 8 }}>Theme:</span>
             <ToggleButtons
               options={["Light", "Dark"]}
               value={themeName === "dark" ? "Dark" : "Light"}
               onChange={(v) => setThemeName(v === "Dark" ? "dark" : "light")}
-              T={T}
+             
             />
           </div>
         </div>
@@ -390,7 +391,7 @@ export default function App() {
         {/* Tabs */}
         <nav style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Primary">
           {(["Conflicts", "Lessons", "Scripture", "Profile"] as Tab[]).map((t) => (
-            <TabButton key={t} active={activeTab === t} onClick={() => setActiveTab(t)} T={T}>
+            <TabButton key={t} active={activeTab === t} onClick={() => setActiveTab(t)}>
               {t}
             </TabButton>
           ))}
@@ -400,7 +401,7 @@ export default function App() {
       {/* Pending action ribbon */}
       {pendingForMe.length > 0 && (
         <div style={{ ...layoutStyle, paddingTop: 12 }}>
-          <Banner T={T} color={T.primary}>
+          <Banner color={T.primary}>
             You have {pendingForMe.length} session{pendingForMe.length > 1 ? "s" : ""} waiting for your action.
             Open “Conflicts” to continue.
           </Banner>
@@ -411,7 +412,7 @@ export default function App() {
       <main style={layoutStyle}>
         {activeTab === "Conflicts" && (
           <ConflictsView
-            T={T}
+           
             activeUser={activeUser}
             conflicts={conflicts}
             setConflicts={setConflicts}
@@ -422,11 +423,11 @@ export default function App() {
             setVerseTopic={setVerseTopic}
           />
         )}
-        {activeTab === "Lessons" && <LessonsView T={T} />}
-        {activeTab === "Scripture" && <ScriptureView T={T} />}
+        {activeTab === "Lessons" && <LessonsView />}
+        {activeTab === "Scripture" && <ScriptureView />}
         {activeTab === "Profile" && (
           <ProfileView
-            T={T}
+           
             activeUser={activeUser}
             styles={styles}
             setStyles={setStyles}
@@ -665,9 +666,9 @@ function Modal({
 
 function ScriptureInline({ refText, T }: { refText: string; T: Theme }) {
   return (
-    <Pill T={T} color={T.accent}>
+    <TabPill color={T.accent}>
       Scripture: {refText}
-    </Pill>
+    </TabPill>
   );
 }
 
@@ -704,15 +705,15 @@ function PrayerTimer({ T }: { T: Theme }) {
       </p>
       <div style={{ fontSize: 28, fontWeight: 700 }}>{sec}s</div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <PrimaryButton T={T} onClick={() => { setRunning(true); if (sec === 0) setSec(60); }}>
+        <Button onClick={() => { setRunning(true); if (sec === 0) setSec(60); }}>
           {running ? "Running…" : "Start 60s"}
-        </PrimaryButton>
-        <GhostButton T={T} onClick={() => { setRunning(false); }}>
+        </Button>
+        <Button variant="ghost" onClick={() => { setRunning(false); }}>
           Pause
-        </GhostButton>
-        <GhostButton T={T} onClick={() => { setRunning(false); setSec(60); }}>
+        </Button>
+        <Button variant="ghost" onClick={() => { setRunning(false); setSec(60); }}>
           Reset
-        </GhostButton>
+        </Button>
       </div>
     </div>
   );
@@ -769,7 +770,7 @@ function CalmPrepare({
             Inhale 4 • Hold 4 • Exhale 6 — repeat 6–8 times. Relax your jaw and shoulders.
           </p>
         </div>
-        <PrayerTimer T={T} />
+        <PrayerTimer />
       </div>
       <div style={{ ...cardStyle(T) }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -904,9 +905,9 @@ function TipChips({
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
       {tips.map((t, i) => (
-        <Pill key={i} T={T} color={T.primary}>
+        <TabPill key={i} color={T.primary}>
           {t}
-        </Pill>
+        </TabPill>
       ))}
     </div>
   );
@@ -990,11 +991,11 @@ function ConflictsView({
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {showCalm && (
-        <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare" T={T}>
-          <CalmPrepare T={T} topic={verseTopic} onTopicChange={setVerseTopic} />
+        <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare">
+          <CalmPrepare topic={verseTopic} onTopicChange={setVerseTopic} />
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <PrimaryButton T={T} onClick={actuallyCreate}>I’m ready to begin</PrimaryButton>
-            <GhostButton T={T} onClick={() => setShowCalm(false)}>Cancel</GhostButton>
+            <Button onClick={actuallyCreate}>I’m ready to begin</Button>
+            <Button variant="ghost" onClick={() => setShowCalm(false)}>Cancel</Button>
           </div>
         </Modal>
       )}
@@ -1003,9 +1004,9 @@ function ConflictsView({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
           <h2 style={{ margin: 0, letterSpacing: "0.02em" }}>Conflict Sessions</h2>
           <div style={{ display: "flex", gap: 8 }}>
-            <AccentButton T={T} onClick={startNew}>+ Start Conflict</AccentButton>
+            <AccentButton onClick={startNew}>+ Start Conflict</AccentButton>
             {myResolved.length > 0 && (
-              <GhostButton T={T} onClick={exportCSV}>Export Resolved CSV</GhostButton>
+              <Button variant="ghost" onClick={exportCSV}>Export Resolved CSV</Button>
             )}
           </div>
         </div>
@@ -1024,7 +1025,7 @@ function ConflictsView({
                 c={c}
                 me={activeUser}
                 setConflicts={setConflicts}
-                T={T}
+               
                 myStyles={userStyles[activeUser]}
                 verseTopic={verseTopic}
                 setVerseTopic={setVerseTopic}
@@ -1041,7 +1042,7 @@ function ConflictsView({
         )}
         <div style={{ display: "grid", gap: 12 }}>
           {myResolved.map((c) => (
-            <ResolvedCard key={c.id} c={c} me={activeUser} T={T} />
+            <ResolvedCard key={c.id} c={c} me={activeUser} />
           ))}
         </div>
       </section>
@@ -1211,33 +1212,33 @@ function ConflictCard({
   return (
     <div style={{ ...cardStyle(T), borderColor: T.primary }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Pill T={T}>Session #{c.id.slice(0, 6)}</Pill>
-        <Pill T={T}>Initiator: <b>{c.initiator}</b></Pill>
-        <Pill T={T}>Recipient: <b>{c.recipient}</b></Pill>
-        <Pill T={T}>Started {fmtDateTime(c.createdAt)}</Pill>
-        {c.resolvedAt && <Pill T={T}>Resolved {fmtDateTime(c.resolvedAt)}</Pill>}
+        <TabPill>Session #{c.id.slice(0, 6)}</TabPill>
+        <TabPill>Initiator: <b>{c.initiator}</b></TabPill>
+        <TabPill>Recipient: <b>{c.recipient}</b></TabPill>
+        <TabPill>Started {fmtDateTime(c.createdAt)}</TabPill>
+        {c.resolvedAt && <TabPill>Resolved {fmtDateTime(c.resolvedAt)}</TabPill>}
       </div>
 
       {iAmRecipient && c.hasPromptForRecipient && (
-        <Banner T={T} color={T.primary}>Your partner invited you to continue this session.</Banner>
+        <Banner color={T.primary}>Your partner invited you to continue this session.</Banner>
       )}
       {iAmInitiator && c.hasPromptForInitiator && (
-        <Banner T={T} color={T.accent}>Your partner responded. Continue when ready.</Banner>
+        <Banner color={T.accent}>Your partner responded. Continue when ready.</Banner>
       )}
 
       <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap" }} aria-label="Progress">
         {stepOrder.map((s, i) => (
-          <Pill key={s} T={T} color={i <= currentIndex ? (i === currentIndex ? T.primary : T.soft) : T.soft}>
+          <TabPill key={s} color={i <= currentIndex ? (i === currentIndex ? T.primary : T.soft) : T.soft}>
             {i + 1}. {labelForStep(s)}
-          </Pill>
+          </TabPill>
         ))}
       </div>
 
       {showCalm && (
-        <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare" T={T}>
-          <CalmPrepare T={T} compact topic={verseTopic} onTopicChange={setVerseTopic} />
+        <Modal onClose={() => setShowCalm(false)} title="Calm & Prepare">
+          <CalmPrepare compact topic={verseTopic} onTopicChange={setVerseTopic} />
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <PrimaryButton T={T} onClick={() => setShowCalm(false)}>Proceed</PrimaryButton>
+            <Button onClick={() => setShowCalm(false)}>Proceed</Button>
           </div>
         </Modal>
       )}
@@ -1247,17 +1248,17 @@ function ConflictCard({
         {c.step === "QUALIFY" && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Step 1 – Qualification (single-sentence focus)</h3>
-            <ScriptureInline refText="James 1:19–20" T={T} />
+            <ScriptureInline refText="James 1:19–20" />
             <p style={{ color: T.muted, maxWidth: "70ch" }}>
               Initiator writes a <b>single sentence</b> issue, adds brief details, accepts the single focus,
               then the recipient reviews and accepts.
             </p>
-            <SafetyBanner T={T} />
-            <TipChips T={T} styles={myStyles} step="QUALIFY" role={iAmInitiator ? "initiator" : "recipient"} />
+            <SafetyBanner />
+            <TipChips styles={myStyles} step="QUALIFY" role={iAmInitiator ? "initiator" : "recipient"} />
 
             {/* Language guardrail */}
             {(needsGentleStart(details) || needsGentleStart(sentence)) && (
-              <Banner T={T} color={T.accent}>
+              <Banner color={T.accent}>
                 Gentle start tip: {gentleTemplate}
               </Banner>
             )}
@@ -1268,21 +1269,21 @@ function ConflictCard({
                 label="One-sentence issue"
                 value={sentence}
                 onChange={setSentence}
-                T={T}
+               
                 placeholder="e.g., I feel hurt when plans change last minute without telling me."
               />
               <Field
                 label="Details (short)"
                 value={details}
                 onChange={setDetails}
-                T={T}
+               
                 textarea
                 placeholder="Share concise facts + context."
               />
 
               {!c.initiatorAcceptedSingleFocus ? (
-                <PrimaryButton
-                  T={T}
+                <Button
+                 
                   disabled={!sentence || !details}
                   onClick={() =>
                     update((x) => {
@@ -1294,7 +1295,7 @@ function ConflictCard({
                   }
                 >
                   Accept single-focus & notify partner
-                </PrimaryButton>
+                </Button>
               ) : (
                 <div style={{ color: T.success, fontSize: 14 }}>
                   ✓ You accepted the single-focus. Waiting for recipient…
@@ -1306,11 +1307,11 @@ function ConflictCard({
             {iAmRecipient && c.initiatorAcceptedSingleFocus && !c.recipientAcceptedSingleFocus && (
               <div style={{ marginTop: 16 }}>
                 <h4 style={{ margin: "8px 0" }}>Review your partner’s issue</h4>
-                <ReadBox title="One-sentence issue" value={c.issueSentence || ""} T={T} />
-                <ReadBox title="Details" value={c.issueDetails || ""} T={T} />
+                <ReadBox title="One-sentence issue" value={c.issueSentence || ""} />
+                <ReadBox title="Details" value={c.issueDetails || ""} />
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <PrimaryButton
-                    T={T}
+                  <Button
+                   
                     onClick={() =>
                       update((x) => {
                         x.recipientAcceptedSingleFocus = true;
@@ -1319,7 +1320,7 @@ function ConflictCard({
                     }
                   >
                     I accept the single-focus
-                  </PrimaryButton>
+                  </Button>
                 </div>
               </div>
             )}
@@ -1327,9 +1328,9 @@ function ConflictCard({
             {/* Advance gate */}
             {canAdvanceFromQualify() && (
               <div style={{ marginTop: 16 }}>
-                <GhostButton T={T} onClick={advanceFromQualify}>
+                <Button variant="ghost" onClick={advanceFromQualify}>
                   Continue to Step 3 (Recipient reviews partner’s view)
-                </GhostButton>
+                </Button>
               </div>
             )}
           </div>
@@ -1339,38 +1340,38 @@ function ConflictCard({
         {c.step === "RECIPIENT_REVIEW" && iAmRecipient && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Step 3 – Review Partner’s View (recipient only)</h3>
-            <ScriptureInline refText="Philippians 2:4" T={T} />
-            <TipChips T={T} styles={myStyles} step="RECIPIENT_REVIEW" role="recipient" />
-            <ReadBox title="Partner’s one-sentence issue" value={c.issueSentence || ""} T={T} />
-            <ReadBox title="Partner’s details" value={c.issueDetails || ""} T={T} />
+            <ScriptureInline refText="Philippians 2:4" />
+            <TipChips styles={myStyles} step="RECIPIENT_REVIEW" role="recipient" />
+            <ReadBox title="Partner’s one-sentence issue" value={c.issueSentence || ""} />
+            <ReadBox title="Partner’s details" value={c.issueDetails || ""} />
             <Field
               label="Summarize your partner’s view (to their satisfaction)"
               value={reviewSummary}
               onChange={setReviewSummary}
-              T={T}
+             
               textarea
               placeholder="Paraphrase what you heard to show understanding."
             />
-            <PrimaryButton
-              T={T}
+            <Button
+             
               disabled={!canCompleteReview()}
               onClick={completeReview}
             >
               Complete Step 3
-            </PrimaryButton>
+            </Button>
           </div>
         )}
         {c.step === "RECIPIENT_REVIEW" && iAmInitiator && (
-          <InfoNote T={T}>Waiting for recipient to complete Step 3 (Review Partner’s View).</InfoNote>
+          <InfoNote>Waiting for recipient to complete Step 3 (Review Partner’s View).</InfoNote>
         )}
 
         {/* STEP 4 */}
         {c.step === "QUESTIONS_SELFCRITIQUE" && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Step 4 – Nonhostile Questions & Self-Critique</h3>
-            <TipChips T={T} styles={myStyles} step="QUESTIONS_SELFCRITIQUE" role={iAmInitiator ? "initiator" : "recipient"} />
+            <TipChips styles={myStyles} step="QUESTIONS_SELFCRITIQUE" role={iAmInitiator ? "initiator" : "recipient"} />
             {(needsGentleStart(nonhostile) || needsGentleStart(selfCrit)) && (
-              <Banner T={T} color={T.accent}>
+              <Banner color={T.accent}>
                 Gentle language tip: {gentleTemplate}
               </Banner>
             )}
@@ -1379,7 +1380,7 @@ function ConflictCard({
               label="Nonhostile questions"
               value={nonhostile}
               onChange={setNonhostile}
-              T={T}
+             
               textarea
               placeholder='e.g., Can you help me understand what you need from me when plans change?'
             />
@@ -1387,13 +1388,13 @@ function ConflictCard({
               label="Self-critique"
               value={selfCrit}
               onChange={setSelfCrit}
-              T={T}
+             
               textarea
               placeholder="e.g., I’ve reacted sharply; I can pause and ask before assuming."
             />
-            <PrimaryButton T={T} onClick={completeQuestionsSelf}>
+            <Button onClick={completeQuestionsSelf}>
               Continue to Calm & Prepare
-            </PrimaryButton>
+            </Button>
           </div>
         )}
 
@@ -1401,13 +1402,13 @@ function ConflictCard({
         {c.step === "CALM_PREPARE" && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Step 5 – Calm & Prepare</h3>
-            <ScriptureInline refText="1 Peter 4:8" T={T} />
-            <TipChips T={T} styles={myStyles} step="CALM_PREPARE" role={iAmInitiator ? "initiator" : "recipient"} />
-            <CalmPrepare T={T} compact topic={verseTopic} onTopicChange={setVerseTopic} />
+            <ScriptureInline refText="1 Peter 4:8" />
+            <TipChips styles={myStyles} step="CALM_PREPARE" role={iAmInitiator ? "initiator" : "recipient"} />
+            <CalmPrepare compact topic={verseTopic} onTopicChange={setVerseTopic} />
             <div style={{ marginTop: 8 }}>
-              <PrimaryButton T={T} onClick={proceedFromCalmPrepare}>
+              <Button onClick={proceedFromCalmPrepare}>
                 Proceed to Schedule
-              </PrimaryButton>
+              </Button>
             </div>
           </div>
         )}
@@ -1419,10 +1420,10 @@ function ConflictCard({
             <p style={{ color: T.muted, maxWidth: "70ch" }}>
               Initiator proposes; recipient confirms. Add a descriptor like <i>"after dinner"</i> or <i>"after kids are in bed"</i>.
             </p>
-            <TipChips T={T} styles={myStyles} step="SCHEDULE" role={iAmInitiator ? "initiator" : "recipient"} />
+            <TipChips styles={myStyles} step="SCHEDULE" role={iAmInitiator ? "initiator" : "recipient"} />
             <fieldset style={{ border: "none", padding: 0 }} disabled={!iAmInitiator}>
               <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-                <FieldRaw label="Date" T={T}>
+                <FieldRaw label="Date">
                   <input
                     type="date"
                     value={date}
@@ -1431,7 +1432,7 @@ function ConflictCard({
                     aria-label="Proposed date"
                   />
                 </FieldRaw>
-                <FieldRaw label="Time" T={T}>
+                <FieldRaw label="Time">
                   <input
                     type="time"
                     value={time}
@@ -1441,7 +1442,7 @@ function ConflictCard({
                   />
                 </FieldRaw>
               </div>
-              <FieldRaw label='Descriptor (optional, e.g., "after dinner")' T={T}>
+              <FieldRaw label='Descriptor (optional, e.g., "after dinner")'>
                 <input
                   value={desc}
                   onChange={(e) => setDesc(e.target.value)}
@@ -1450,9 +1451,9 @@ function ConflictCard({
                   aria-label="Proposed descriptor"
                 />
               </FieldRaw>
-              <PrimaryButton T={T} onClick={proposeTime}>
+              <Button onClick={proposeTime}>
                 Save Proposed Time
-              </PrimaryButton>
+              </Button>
             </fieldset>
 
             {schedulePreview && (
@@ -1464,9 +1465,9 @@ function ConflictCard({
 
             {iAmRecipient && (c.proposedDate || c.proposedTime || c.proposedDescriptor) && !c.confirmedDateTimeByRecipient && (
               <div style={{ marginTop: 8 }}>
-                <PrimaryButton T={T} onClick={recipientConfirmTime}>
+                <Button onClick={recipientConfirmTime}>
                   Confirm Proposed Time
-                </PrimaryButton>
+                </Button>
               </div>
             )}
 
@@ -1482,13 +1483,13 @@ function ConflictCard({
         {c.step === "DECISION_REPAIR" && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Step 7 – Decision & Repair</h3>
-            <ScriptureInline refText="Colossians 3:13" T={T} />
-            <TipChips T={T} styles={myStyles} step="DECISION_REPAIR" role={iAmInitiator ? "initiator" : "recipient"} />
+            <ScriptureInline refText="Colossians 3:13" />
+            <TipChips styles={myStyles} step="DECISION_REPAIR" role={iAmInitiator ? "initiator" : "recipient"} />
             <Field
               label="Agreements / Decisions"
               value={decisions}
               onChange={setDecisions}
-              T={T}
+             
               textarea
               placeholder="Specific actions, boundaries, or agreements."
             />
@@ -1496,7 +1497,7 @@ function ConflictCard({
               label="Apologies & Forgiveness"
               value={apologies}
               onChange={setApologies}
-              T={T}
+             
               textarea
               placeholder="Words of confession and forgiveness."
             />
@@ -1504,11 +1505,11 @@ function ConflictCard({
               label="Follow-up Plan"
               value={followUp}
               onChange={setFollowUp}
-              T={T}
+             
               textarea
               placeholder="When/how to check in and keep commitments."
             />
-            <AccentButton T={T} onClick={completeDecisionRepair}>
+            <AccentButton onClick={completeDecisionRepair}>
               Mark as Resolved
             </AccentButton>
           </div>
@@ -1518,7 +1519,7 @@ function ConflictCard({
         {c.step === "RESOLVED" && (
           <div style={{ ...cardStyle(T) }}>
             <h3 style={{ marginTop: 0 }}>Resolved</h3>
-            <ResolvedCard c={c} me={me} T={T} />
+            <ResolvedCard c={c} me={me} />
           </div>
         )}
       </div>
@@ -1556,25 +1557,25 @@ function ResolvedCard({ c, me, T }: { c: ConflictSession; me: UserId; T: Theme }
   return (
     <div style={cardStyle(T)}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Pill T={T}>Initiator {c.initiator}</Pill>
-        <Pill T={T}>Recipient {c.recipient}</Pill>
-        <Pill T={T}>Created {fmtDateTime(c.createdAt)}</Pill>
-        {c.resolvedAt && <Pill T={T}>Resolved {fmtDateTime(c.resolvedAt)}</Pill>}
+        <TabPill>Initiator {c.initiator}</TabPill>
+        <TabPill>Recipient {c.recipient}</TabPill>
+        <TabPill>Created {fmtDateTime(c.createdAt)}</TabPill>
+        {c.resolvedAt && <TabPill>Resolved {fmtDateTime(c.resolvedAt)}</TabPill>}
       </div>
       <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-        <ReadBox title="Issue" value={c.issueSentence || ""} T={T} />
-        <ReadBox title="Details" value={c.issueDetails || ""} T={T} />
-        <ReadBox title="Recipient Summary" value={c.recipientReviewSummary || ""} T={T} />
-        <ReadBox title="Nonhostile Questions" value={c.nonhostileQuestions || ""} T={T} />
-        <ReadBox title="Self-Critique" value={c.selfCritique || ""} T={T} />
-        <ReadBox title="Scheduled" value={scheduled} T={T} />
-        <ReadBox title="Agreements / Decisions" value={c.decisionsAgreements || ""} T={T} />
-        <ReadBox title="Apologies & Forgiveness" value={c.apologiesForgiveness || ""} T={T} />
-        <ReadBox title="Follow-up Plan" value={c.followUpPlan || ""} T={T} />
-        {c.recap && <ReadBox title="Recap" value={c.recap} T={T} />}
+        <ReadBox title="Issue" value={c.issueSentence || ""} />
+        <ReadBox title="Details" value={c.issueDetails || ""} />
+        <ReadBox title="Recipient Summary" value={c.recipientReviewSummary || ""} />
+        <ReadBox title="Nonhostile Questions" value={c.nonhostileQuestions || ""} />
+        <ReadBox title="Self-Critique" value={c.selfCritique || ""} />
+        <ReadBox title="Scheduled" value={scheduled} />
+        <ReadBox title="Agreements / Decisions" value={c.decisionsAgreements || ""} />
+        <ReadBox title="Apologies & Forgiveness" value={c.apologiesForgiveness || ""} />
+        <ReadBox title="Follow-up Plan" value={c.followUpPlan || ""} />
+        {c.recap && <ReadBox title="Recap" value={c.recap} />}
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <GhostButton T={T} onClick={copyRecap}>Copy Recap</GhostButton>
+        <Button variant="ghost" onClick={copyRecap}>Copy Recap</Button>
       </div>
       <p style={{ color: T.muted, marginTop: 8, marginBottom: 0 }}>
         View-only. Resolved sessions are preserved for reflection.
@@ -1786,17 +1787,17 @@ function LessonsView({ T }: { T: Theme }) {
                 <h3 style={{ margin: "6px 0" }}>{l.title}</h3>
                 <p style={{ color: T.muted, marginTop: 4, maxWidth: "70ch" }}>{l.description}</p>
               </div>
-              <PrimaryButton T={T} onClick={() => setOpenId(open ? null : l.id)}>
+              <Button onClick={() => setOpenId(open ? null : l.id)}>
                 {open ? "Close" : "Open"}
-              </PrimaryButton>
+              </Button>
             </div>
             {open && (
               <div style={{ marginTop: 10, border: `1px solid ${T.soft}`, borderRadius: 12, padding: 12 }}>
                 <div style={{ whiteSpace: "pre-wrap", maxWidth: "70ch" }}>{l.body}</div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <GhostButton T={T} onClick={() => alert("Action idea: Send one gratitude text now.")}>
+                  <Button variant="ghost" onClick={() => alert("Action idea: Send one gratitude text now.")}>
                     Do Together: Gratitude Text
-                  </GhostButton>
+                  </Button>
                 </div>
               </div>
             )}
@@ -1845,7 +1846,7 @@ function ScriptureView({ T }: { T: Theme }) {
             <div style={{ marginTop: 6, maxWidth: "70ch" }}>{s.text}</div>
             <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
               {s.topics.map((t) => (
-                <Pill key={t} T={T}>{t}</Pill>
+                <TabPill key={t}>{t}</TabPill>
               ))}
             </div>
           </div>
@@ -1922,7 +1923,7 @@ function ProfileView({
         <p style={{ color: T.muted, maxWidth: "70ch" }}>
           Your conflict style guides personalized tips during the path.
         </p>
-        <SafetyBanner T={T} />
+        <SafetyBanner />
       </div>
 
       <div style={cardStyle(T)}>
@@ -1933,16 +1934,16 @@ function ProfileView({
               <b>Primary:</b> {userStyle.primary} {userStyle.secondary ? <>• <b>Secondary:</b> {userStyle.secondary}</> : null}
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Pill T={T} color={T.primary}>Personalized tips are active</Pill>
+              <TabPill color={T.primary}>Personalized tips are active</TabPill>
             </div>
             <div style={{ marginTop: 12 }}>
-              <GhostButton T={T} onClick={start}>Retake Mini-Assessment</GhostButton>
+              <Button variant="ghost" onClick={start}>Retake Mini-Assessment</Button>
             </div>
           </>
         ) : (
           <>
             <p style={{ color: T.muted }}>No results yet for User {activeUser}.</p>
-            <PrimaryButton T={T} onClick={start}>Take Mini-Assessment (2–3 min)</PrimaryButton>
+            <Button onClick={start}>Take Mini-Assessment (2–3 min)</Button>
           </>
         )}
       </div>
@@ -1968,21 +1969,21 @@ function ProfileView({
                         return copy;
                       })
                     }
-                    T={T}
+                   
                   />
                 </div>
               </div>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <PrimaryButton T={T} onClick={submit}>Save My Results</PrimaryButton>
-            <GhostButton T={T} onClick={() => setTaking(false)}>Cancel</GhostButton>
+            <Button onClick={submit}>Save My Results</Button>
+            <Button variant="ghost" onClick={() => setTaking(false)}>Cancel</Button>
           </div>
         </div>
       )}
 
       {submitted && (
-        <Banner T={T} color={T.success}>Assessment saved. Your coaching tips will appear during conflict steps.</Banner>
+        <Banner color={T.success}>Assessment saved. Your coaching tips will appear during conflict steps.</Banner>
       )}
 
       <div style={cardStyle(T)}>
@@ -2010,3 +2011,4 @@ function labelForStep(s: ConflictStep) {
     case "RESOLVED": return "Resolved";
   }
 }
+
