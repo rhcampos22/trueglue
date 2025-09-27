@@ -3,5 +3,6 @@ dist/
 .vscode/
 .env
 .env.local
+.env.*.local
 coverage/
 *.log

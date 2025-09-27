@@ -4,6 +4,8 @@ import ConflictWorkflow from "./components/ConflictWorkflow";
 import { TG_COLORS, ThemeProvider, useTheme } from "./theme";
 import { createPortal } from "react-dom";
 import { useT, cardStyle, focusRing, PrimaryButton, Pill } from "./ui";
+import SignInPanel from "./features/auth/SignInPanel";
+import CouplePanel from "./features/couple/CouplePanel";
 
 function ThemeTogglePortal() {
   const { theme, toggle, colors } = useTheme();  // call hook unconditionally
@@ -1578,7 +1580,12 @@ const step = steps[i];
 
 /* -------------------- ROOT -------------------- */
 export default function App() {
-  return (
+  console.log("✅ Supabase URL:", import.meta.env.VITE_SUPABASE_URL);
+  console.log(
+    "✅ Supabase Key:",
+    String(import.meta.env.VITE_SUPABASE_ANON_KEY)?.slice(0, 10) + "..."
+  );
+   return (
     <ThemeProvider>
       <ToastHost>
         <AppShell />
@@ -1810,27 +1817,28 @@ useEffect(() => {
           <Ctx.Provider value={api}>
   <AppTabs route={route} setRoute={setRoute} />
 
+  {/* Auth then couple linking */}
+  <div style={{ marginTop: 24 }}>
+    <SignInPanel />
+    <CouplePanel />
+  </div>
+
   <OnboardingIntro
     open={showIntro}
     onFinish={() => {
       setShowIntro(false);
-      setOnboarded();     // also mark old flag so the old welcome doesn’t pop unintentionally
-      setShowTour(true);  // jump into the guided tab tour next
+      setOnboarded();
+      setShowTour(true);
       setQueryParam("intro", null);
     }}
     onSkipAll={() => {
       setShowIntro(false);
       setQueryParam("intro", null);
-      setShowWelcome(true); // optional: show your existing welcome if they skipped the intro
+      setShowWelcome(true);
     }}
   />
 
-  {/* 5-step guided tour (highlights existing tabs by id) */}
-  <OnboardingTour
-    open={showTour}
-    onClose={finishTour}
-    setRoute={setRoute}
-  />
+  <OnboardingTour open={showTour} onClose={finishTour} setRoute={setRoute} />
 </Ctx.Provider>
 
 <Footer />
